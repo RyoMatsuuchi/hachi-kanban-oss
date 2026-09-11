@@ -424,6 +424,9 @@ node "$HHN_REPO/scripts/setup-local.mjs" --apply --skip-install
 
 導入状態は `hachi doctor` の `orchestrator helpers` 検査で確認できる
 （5本の存在と、解決先が checkout 内であることを見る。`hachi-watch-stop` は 2026-09-02 に追加）。
+**exit code だけで導入状態を判断しない。** 未導入（`missing`）は警告扱いで合格になるため、
+オーケストレーターは `detail` の `警告:` と欠落シム名を読む必要がある。
+シムはあるが壊れている場合（別 checkout を指す・実行不能・解決先が不在）だけが失敗になる。
 
 `--mission` / `--orchestrator` はそのまま handover CLI へ素通しする。
 

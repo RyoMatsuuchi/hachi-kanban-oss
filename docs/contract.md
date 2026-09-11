@@ -2745,7 +2745,7 @@ wrapper を status 非対応版へロールバックした直後を検知でき�
 
 `updatedAt` と bridge プロセス起動時刻の比較も使わない。**wrapper は spawn より前に apply.sh を
 実行するため、健全な起動でも `updatedAt` は必ず bridge プロセス起動時刻より古くなる**
-（`scripts/kanban-shared-app-server.sh` の apply→spawn 順）。時刻比較は健全な起動を全て NG にする。
+（前身システム側 `legacy-hermes:scripts/kanban-shared-app-server.sh` の apply→spawn 順。本リポジトリには含まれない）。時刻比較は健全な起動を全て NG にする。
 
 代わりにプロセス同一性で判定する:
 
