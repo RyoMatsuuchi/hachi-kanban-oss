@@ -2027,8 +2027,11 @@ describe("hachi doctor", () => {
       expect(check?.detail).toContain("hachi-handover-now=ok");
       expect(check?.detail).toContain("hhn=ok");
       expect(check?.detail).toContain("hachi-watch-stop=ok");
+      expect(check?.detail).toContain("cc-cache-ttl=ok");
       expect(check?.detail).toContain(`hachi-orch-enable=outside-repo:${trapSource}`);
-      expect(check?.detail).toContain("警告:");
+      // suffix 判定への逆戻りは「警告 prefix が消える」形でしか現れないので、
+      // 部分一致ではなく先頭位置ごと固定する（`警告` は他検査の detail にも出る語）。
+      expect(check?.detail?.startsWith("警告: ")).toBe(true);
       expect(check?.ok).toBe(true);
       expect(result.ok).toBe(true);
       expect(ctx.exitCodes).toEqual([]);

@@ -126,6 +126,13 @@ export const ORCHESTRATOR_HELPER_SPECS: ReadonlyArray<
 /** setup-local.mjs が生成する exec シム（`#!/bin/sh` + `exec "<path>" "$@"`）の形式一致を見る。 */
 const ORCHESTRATOR_HELPER_SHIM_PATTERN = /^#!\/bin\/sh\nexec "([^"\n]+)" "\$@"\n$/;
 
+/**
+ * 「合格だが警告」を表す detail の先頭。`model transport (*)` の decision=unknown と
+ * `orchestrator helpers` の未導入が共有する。README / docs/portable-install.md が
+ * 利用者に約束し、テストが依存する表示上の約束なのでリテラル重複させない。
+ */
+const DOCTOR_WARNING_PREFIX = "警告: ";
+
 function compareStrictSemver(left: string, right: string): number {
   const parse = (value: string): [number, number, number, string] => {
     const match = /^(\d+)\.(\d+)\.(\d+)(.*)$/.exec(value);
@@ -1081,7 +1088,7 @@ async function checkModelTransportCompatibility(
   const detail = `${observation.decision.status} reason=${observation.decision.reason}` +
     ` detail=${observation.decision.detail} runtime=${runtime} capabilities=${capabilities}`;
   return observation.decision.status === "unknown"
-    ? { name, ok: true, detail: `警告: ${detail}` }
+    ? { name, ok: true, detail: `${DOCTOR_WARNING_PREFIX}${detail}` }
     : { name, ok: false, detail };
 }
 
@@ -1840,8 +1847,9 @@ function checkOrchestratorHelpers(deps: CliDeps): DoctorCheck {
   const breakdown = `binDir=${binDir} repoRoot=${repoRoot} ${results.map((result) => result.detail).join(" ")}`;
   const detail = allInstalled
     ? breakdown
-    : `警告: オーケストレーター運用ヘルパーが未導入または不一致です` +
-      `（オーケストレーター運用者以外は無視可。導入は scripts/setup-local.mjs --apply）: ${breakdown}`;
+    : `${DOCTOR_WARNING_PREFIX}オーケストレーター運用ヘルパーが未導入・不一致・実行不能です` +
+      `（オーケストレーター運用者以外は無視可。導入は` +
+      ` node scripts/setup-local.mjs --apply --skip-install）: ${breakdown}`;
   return { name, ok: true, detail };
 }
 

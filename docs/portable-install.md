@@ -151,7 +151,8 @@ full doctor も readiness の証明ではありません。`codex` / `claude` CL
 `orchestrator helpers` 検査は `~/.local/bin` の運用ヘルパー 5 本の導入状態を見ますが、
 この 5 本を必要とするのはオーケストレーター運用者だけなので、欠けていても fail にはならず
 `警告:` 付きの合格（`model transport (*)` の decision=unknown と同じ扱い）になります。
-§3 の `--no-link` を使うとこの 1 項目に警告が出ますが、doctor 全体は exit 0 のままです。
+§3 の `--no-link` を使うとこの 1 項目に警告が出ますが、この項目が原因で doctor が
+exit 1 になることはありません（他の検査は独立に fail し得ます）。
 警告文にはどのシムがどの状態（`missing` / `not-a-shim` / `unexpected-source` /
 `shim-not-executable` / `source-not-executable` 等）なのかが内訳として出ます。
 

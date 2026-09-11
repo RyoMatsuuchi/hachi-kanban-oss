@@ -74,7 +74,8 @@ node scripts/setup-local.mjs
 node scripts/setup-local.mjs --apply --skip-install --transport direct
 
 # symlink もヘルパーシムも置かない場合（hachi doctor の
-# "orchestrator helpers" 検査が警告になるだけで、doctor は exit 0。下記の注記参照）
+# "orchestrator helpers" 検査が警告になるだけで、この項目が原因では exit 1 に
+# ならない。下記の注記参照）
 node scripts/setup-local.mjs --apply --skip-install --transport direct --no-link
 
 # config / ローカル state の確認。runtime readiness はサービス起動後に full doctor で確認する
@@ -89,7 +90,8 @@ node scripts/setup-local.mjs --apply --skip-install --transport direct --no-link
 `hachi-orch-enable`、`cc-cache-ttl`、`hachi-watch-stop`）も作られます。
 CLI 本体の動作には不要で、これらを必要とするのはオーケストレーター運用者だけです。
 `hachi doctor` の `orchestrator helpers` 検査は 5 本の導入状態を見ますが、欠けていても
-fail にはならず `警告:` 付きの合格として報告します（doctor 全体は exit 0 のまま。
+fail にはならず `警告:` 付きの合格として報告します（この項目が原因で doctor が
+exit 1 になることはありません。他の検査は独立に fail し得ます。
 `packages/cli/src/commands/doctor.ts` の `checkOrchestratorHelpers`）。
 `--no-link` で入れた場合はこの 1 項目に警告が出ますが、そのまま使って問題ありません。
 警告文にはどのシムがどの状態（`missing` / `not-a-shim` / `unexpected-source` 等）なのかが
