@@ -1934,10 +1934,12 @@ describe("hachi doctor", () => {
       expect(check?.detail).toContain("hachi-handover-now=ok");
       expect(check?.detail).toContain("hhn=ok");
       expect(check?.detail).toContain("hachi-orch-enable=ok");
+      // 5本揃っている場合は警告を付けない（警告文の有無で「全部揃っている」を区別する）
+      expect(check?.detail).not.toContain("警告:");
       expect(result.ok).toBe(true);
     });
 
-    it("5本とも未導入ならmissingとしてNGになる（マシン再構築で~/.local/binが消えた状態を再現）", async () => {
+    it("5本とも未導入ならmissingを警告として報告するがdoctorはfailさせない（マシン再構築で~/.local/binが消えた状態を再現）", async () => {
       ctx = createTestDeps();
       const emptyBinDir = join(ctx.deps.env.home, "empty-bin");
       mkdirSync(emptyBinDir, { recursive: true });
@@ -1947,15 +1949,19 @@ describe("hachi doctor", () => {
 
       const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
       const check = result.checks.find((c) => c.name === "orchestrator helpers");
-      expect(check?.ok).toBe(false);
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
       expect(check?.detail).toContain("hachi-handover-now=missing");
       expect(check?.detail).toContain("hhn=missing");
       expect(check?.detail).toContain("hachi-orch-enable=missing");
-      expect(result.ok).toBe(false);
-      expect(ctx.exitCodes).toEqual([1]);
+      expect(check?.detail).toContain("cc-cache-ttl=missing");
+      expect(check?.detail).toContain("hachi-watch-stop=missing");
+      // 一般利用者の環境にはこの5本が無いのが正常なので、doctor 全体は green のまま
+      expect(result.ok).toBe(true);
+      expect(ctx.exitCodes).toEqual([]);
     });
 
-    it("シム形式ではない実体ファイル（原本）が置かれていればNGにする", async () => {
+    it("シム形式ではない実体ファイル（原本）が置かれていれば警告として報告する", async () => {
       ctx = createTestDeps();
       const binDir = join(ctx.deps.env.home, "real-body-bin");
       mkdirSync(binDir, { recursive: true });
@@ -1968,11 +1974,12 @@ describe("hachi doctor", () => {
 
       const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
       const check = result.checks.find((c) => c.name === "orchestrator helpers");
-      expect(check?.ok).toBe(false);
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
       expect(check?.detail).toContain("hachi-orch-enable=not-a-shim");
     });
 
-    it("repo外を指すシムはoutside-repoとしてNGにする", async () => {
+    it("repo外を指すシムはoutside-repoとして警告に含める", async () => {
       ctx = createTestDeps();
       const binDir = join(ctx.deps.env.home, "outside-bin");
       const otherRepo = join(ctx.deps.env.home, "other-checkout", "scripts", "hachi-handover-now");
@@ -1984,15 +1991,18 @@ describe("hachi doctor", () => {
 
       const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
       const check = result.checks.find((c) => c.name === "orchestrator helpers");
-      expect(check?.ok).toBe(false);
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
       expect(check?.detail).toContain(`hachi-handover-now=outside-repo:${otherRepo}`);
     });
 
-    it("解決先が repo外かつ末尾が=okの罠パス（/tmp/outside=ok）でもfail-openせずNGにする（t_eac0371a7a1a368e rework 2周目）", async () => {
+    it("解決先が repo外かつ末尾が=okの罠パス（/tmp/outside=ok）でもfail-openせず警告を付ける（t_eac0371a7a1a368e rework 2周目）", async () => {
       // 二審指摘の再現条件そのもの: 旧実装は `results.every((r) => r.endsWith("=ok"))` という
       // suffix 判定だったため、outside-repo の detail 文字列がたまたま `=ok` で終わると
-      // 異常なのに ok 扱いになっていた。他4本は正規のrepo内シムにして「1本だけ罠」でも
-      // 通らないことを確認する（5本とも欠落していると別要因でNGになり検証にならないため）。
+      // 異常なのに「全部揃っている」扱いになっていた。他4本は正規のrepo内シムにして
+      // 「1本だけ罠」でも警告が消えないことを確認する（5本とも欠落していると別要因で
+      // 警告が付き検証にならないため）。検査は警告扱いになったので、fail-open の不在は
+      // `ok:false` ではなく「警告文が付いていること」で見る。
       ctx = createTestDeps();
       const binDir = join(ctx.deps.env.home, "outside-suffix-ok-trap-bin");
       const repoRoot = ctx.deps.orchestratorHelperRepoRoot as string;
@@ -2018,12 +2028,13 @@ describe("hachi doctor", () => {
       expect(check?.detail).toContain("hhn=ok");
       expect(check?.detail).toContain("hachi-watch-stop=ok");
       expect(check?.detail).toContain(`hachi-orch-enable=outside-repo:${trapSource}`);
-      expect(check?.ok).toBe(false);
-      expect(result.ok).toBe(false);
-      expect(ctx.exitCodes).toEqual([1]);
+      expect(check?.detail).toContain("警告:");
+      expect(check?.ok).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(ctx.exitCodes).toEqual([]);
     });
 
-    it("repo内だが期待scriptと異なるシムはunexpected-sourceとしてNGにする", async () => {
+    it("repo内だが期待scriptと異なるシムはunexpected-sourceとして警告に含める", async () => {
       ctx = createTestDeps();
       const binDir = join(ctx.deps.env.home, "unexpected-bin");
       const wrongSource = join(ctx.deps.orchestratorHelperRepoRoot as string, "scripts", "hachi-watchdog.sh");
@@ -2035,11 +2046,12 @@ describe("hachi doctor", () => {
 
       const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
       const check = result.checks.find((c) => c.name === "orchestrator helpers");
-      expect(check?.ok).toBe(false);
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
       expect(check?.detail).toContain(`hhn=unexpected-source:${wrongSource}`);
     });
 
-    it("symlinkが置かれていればnot-a-shim-fileとしてNGにする", async () => {
+    it("symlinkが置かれていればnot-a-shim-fileとして警告に含める", async () => {
       ctx = createTestDeps();
       const binDir = join(ctx.deps.env.home, "symlink-bin");
       mkdirSync(binDir, { recursive: true });
@@ -2051,11 +2063,12 @@ describe("hachi doctor", () => {
 
       const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
       const check = result.checks.find((c) => c.name === "orchestrator helpers");
-      expect(check?.ok).toBe(false);
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
       expect(check?.detail).toContain("hachi-handover-now=not-a-shim-file");
     });
 
-    it("シム自身の実行権限が無ければshim-not-executableとしてNGにする（t_eac0371a7a1a368e）", async () => {
+    it("シム自身の実行権限が無ければshim-not-executableとして警告に含める（t_eac0371a7a1a368e）", async () => {
       ctx = createTestDeps();
       const binDir = join(ctx.deps.env.home, "not-executable-shim-bin");
       mkdirSync(binDir, { recursive: true });
@@ -2069,11 +2082,12 @@ describe("hachi doctor", () => {
 
       const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
       const check = result.checks.find((c) => c.name === "orchestrator helpers");
-      expect(check?.ok).toBe(false);
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
       expect(check?.detail).toContain("hachi-handover-now=shim-not-executable");
     });
 
-    it("解決先の実体scriptに実行権限が無ければsource-not-executableとしてNGにする（t_eac0371a7a1a368e）", async () => {
+    it("解決先の実体scriptに実行権限が無ければsource-not-executableとして警告に含める（t_eac0371a7a1a368e）", async () => {
       ctx = createTestDeps();
       const repoRoot = join(ctx.deps.env.home, "no-exec-source-repo");
       mkdirSync(join(repoRoot, "scripts"), { recursive: true });
@@ -2093,8 +2107,48 @@ describe("hachi doctor", () => {
 
       const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
       const check = result.checks.find((c) => c.name === "orchestrator helpers");
-      expect(check?.ok).toBe(false);
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
       expect(check?.detail).toContain("hachi-handover-now=source-not-executable");
+    });
+
+    it("1本だけ欠落していても警告の内訳に欠落シム名と残り4本のokが両方残る（警告化で内訳が失われないことの検証）", async () => {
+      // 警告扱いに落としても、オーケストレーター運用者が「どのシムがどの状態で欠けているか」
+      // を読めることが要件。1本 missing / 4本 ok の混在で内訳が両方出ることを固定する。
+      ctx = createTestDeps();
+      const binDir = join(ctx.deps.env.home, "one-missing-bin");
+      const repoRoot = ctx.deps.orchestratorHelperRepoRoot as string;
+      mkdirSync(binDir, { recursive: true });
+      const handoverSource = join(repoRoot, "scripts", "hachi-handover-now");
+      writeFileSync(join(binDir, "hachi-handover-now"), `#!/bin/sh\nexec "${handoverSource}" "$@"\n`, {
+        mode: 0o755,
+      });
+      writeFileSync(join(binDir, "hhn"), `#!/bin/sh\nexec "${handoverSource}" "$@"\n`, { mode: 0o755 });
+      const cacheTtlSource = join(repoRoot, "scripts", "orchestrator", "cc-cache-ttl");
+      writeFileSync(join(binDir, "cc-cache-ttl"), `#!/bin/sh\nexec "${cacheTtlSource}" "$@"\n`, { mode: 0o755 });
+      const watchStopSource = join(repoRoot, "scripts", "orchestrator", "hachi-watch-stop");
+      writeFileSync(join(binDir, "hachi-watch-stop"), `#!/bin/sh\nexec "${watchStopSource}" "$@"\n`, { mode: 0o755 });
+      // hachi-orch-enable だけ置かない
+      ctx.deps.orchestratorHelperBinDir = binDir;
+
+      await buildProgram(ctx.deps).parseAsync(["doctor", "--offline", "--json"], { from: "user" });
+
+      const result = JSON.parse(ctx.stdout.text()) as { checks: DoctorCheckResult[]; ok: boolean };
+      const check = result.checks.find((c) => c.name === "orchestrator helpers");
+      expect(check?.ok).toBe(true);
+      expect(check?.detail).toContain("警告:");
+      // 欠落シム名が detail に出ること（警告化で最も失われやすい情報）
+      expect(check?.detail).toContain("hachi-orch-enable=missing");
+      // 残り4本の ok も同じ粒度で残ること
+      expect(check?.detail).toContain("hachi-handover-now=ok");
+      expect(check?.detail).toContain("hhn=ok");
+      expect(check?.detail).toContain("cc-cache-ttl=ok");
+      expect(check?.detail).toContain("hachi-watch-stop=ok");
+      // binDir / repoRoot の文脈も残ること
+      expect(check?.detail).toContain(`binDir=${binDir}`);
+      expect(check?.detail).toContain(`repoRoot=${repoRoot}`);
+      expect(result.ok).toBe(true);
+      expect(ctx.exitCodes).toEqual([]);
     });
   });
 });

@@ -148,9 +148,12 @@ full doctor も readiness の証明ではありません。`codex` / `claude` CL
 （`which tmux` / `tmux list-sessions`）と `passthrough patch status`（`lsof`）は
 `--offline` でも実行されます。
 
-`orchestrator helpers` 検査は `~/.local/bin` の運用ヘルパー 5 本が揃っていることを
-合格条件にしています（§3 の `--no-link` を使うとこの 1 項目が NG になり doctor 全体が
-exit 1 になります）。
+`orchestrator helpers` 検査は `~/.local/bin` の運用ヘルパー 5 本の導入状態を見ますが、
+この 5 本を必要とするのはオーケストレーター運用者だけなので、欠けていても fail にはならず
+`警告:` 付きの合格（`model transport (*)` の decision=unknown と同じ扱い）になります。
+§3 の `--no-link` を使うとこの 1 項目に警告が出ますが、doctor 全体は exit 0 のままです。
+警告文にはどのシムがどの状態（`missing` / `not-a-shim` / `unexpected-source` /
+`shim-not-executable` / `source-not-executable` 等）なのかが内訳として出ます。
 
 foreground smoke が通るまで LaunchAgent を install しないでください。
 

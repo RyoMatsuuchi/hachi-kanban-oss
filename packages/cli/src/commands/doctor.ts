@@ -106,7 +106,9 @@ const DEFAULT_ORCHESTRATOR_HELPER_REPO_ROOT = resolve(
 
 /**
  * オーケストレーター運用ヘルパー5本。マシン再構築で `~/.local/bin` 配下が消えると
- * playbook の手順が実行不能になるため doctor で導入状態を検査する（t_eac0371a7a1a368e）。
+ * playbook の手順が実行不能になるため doctor で導入状態を検査し、欠落は警告として
+ * 報告する（t_eac0371a7a1a368e）。オーケストレーター運用者以外には不要なシムなので
+ * 未導入でも doctor 全体は fail させない。
  * この一覧は scripts/setup-local.mjs の ORCHESTRATOR_HELPERS と対応させること
  * （setup-local.mjs がこのシムを生成する側）。test-support.ts の createTestDeps() が
  * fixture 生成のためにこの定数を再利用する。
@@ -1819,19 +1821,28 @@ function inspectOrchestratorHelper(
 /**
  * (N) `~/.local/bin` 配下のオーケストレーター運用ヘルパー
  * （hachi-handover-now/hhn/hachi-orch-enable/cc-cache-ttl/hachi-watch-stop）が
- * repo内のexecシムとして導入されているかを検査する。マシン再構築でこれらが失われると
- * playbookの引き継ぎ・消費監視の立ち上げ手順が実行不能になる（t_eac0371a7a1a368e）。
- * `ok` の判定は必ず構造化された `state` の完全一致で行い、表示用の `detail` 文字列
+ * repo内のexecシムとして導入されているかを「警告として」報告する。マシン再構築でこれらが
+ * 失われるとplaybookの引き継ぎ・消費監視の立ち上げ手順が実行不能になる（t_eac0371a7a1a368e）。
+ * ただしこの5本はオーケストレーター運用者だけが必要とするもので、一般利用者の環境には
+ * 存在しないのが正常なため、欠落でも `ok: false` にはせず `detail` に `警告: ` を付けて
+ * 報告する（`model transport (*)` の decision=unknown と同じ扱い）。
+ * 警告を出すかの判定は必ず構造化された `state` の完全一致で行い、表示用の `detail` 文字列
  * （解決先パスなど任意の内容を含み得る）は判定に使わない（t_eac0371a7a1a368e rework 2周目）。
+ * 欠落内容はオーケストレーター運用者に見えないと困るので、`state` ごとの内訳
+ * （missing / not-a-shim / unexpected-source 等）は警告時も `detail` にそのまま残す。
  */
 function checkOrchestratorHelpers(deps: CliDeps): DoctorCheck {
   const name = "orchestrator helpers";
   const binDir = deps.orchestratorHelperBinDir ?? join(homedir(), ".local", "bin");
   const repoRoot = resolve(deps.orchestratorHelperRepoRoot ?? DEFAULT_ORCHESTRATOR_HELPER_REPO_ROOT);
   const results = ORCHESTRATOR_HELPER_SPECS.map((spec) => inspectOrchestratorHelper(binDir, repoRoot, spec));
-  const ok = results.every((result) => result.state === "ok");
-  const detail = `binDir=${binDir} repoRoot=${repoRoot} ${results.map((result) => result.detail).join(" ")}`;
-  return { name, ok, detail };
+  const allInstalled = results.every((result) => result.state === "ok");
+  const breakdown = `binDir=${binDir} repoRoot=${repoRoot} ${results.map((result) => result.detail).join(" ")}`;
+  const detail = allInstalled
+    ? breakdown
+    : `警告: オーケストレーター運用ヘルパーが未導入または不一致です` +
+      `（オーケストレーター運用者以外は無視可。導入は scripts/setup-local.mjs --apply）: ${breakdown}`;
+  return { name, ok: true, detail };
 }
 
 /** hachi doctor の action 本体 */
