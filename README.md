@@ -45,10 +45,20 @@ Git で共有されるのはソフトウェアだけです。SQLite DB、config�
 ## 前提
 
 - macOS（LaunchAgent を使わない foreground 実行なら Linux でも動きます）
-- Git
-- Node.js 22.13 以上
-- pnpm 10.17.1
+- Git — supervisor の finalize / review / monitor が `git` を直接実行します
+- Node.js 22.13 以上（`bin/hachi` が起動時に検査し、不足なら exit 127）
+- pnpm 10.17.1 — 依存 install、root の `pnpm <script>` 起動、LaunchAgent の
+  `ProgramArguments` で使います（`bin/hachi` を直接叩く経路だけは pnpm を経由しません）
 - direct transport の場合は、利用する `codex` / `claude` CLI と、その認証
+- `sqlite` コマンドは不要です。DB アクセスは npm の `better-sqlite3` だけを使います
+
+構成によって追加で必要になるもの。
+
+- `tmux` — `hachi orchestrator handover` / 後継起動を使う場合。稼働中の
+  orchestrator session がある状態で `tmux` が無いと `hachi doctor` が失敗します
+- `python3` — `~/.local/bin` に入る運用ヘルパー 5 本のうち 4 本
+- Docker と `lsof` — config に `runtimeResources` を書いて runtime resource profile
+  を使う場合のみ（`hachi resource *` 系）
 
 ## セットアップ
 
@@ -60,15 +70,30 @@ pnpm install --frozen-lockfile
 # まず変更内容だけ表示する（setup は既定で dry-run）
 node scripts/setup-local.mjs
 
-# direct 構成、ローカル state、CLI symlink を作成する
+# direct 構成、ローカル state、CLI symlink、運用ヘルパーシムを作成する
 node scripts/setup-local.mjs --apply --skip-install --transport direct
+
+# symlink もヘルパーシムも置かない場合（hachi doctor の
+# "orchestrator helpers" 検査は NG になる。下記の注記参照）
+node scripts/setup-local.mjs --apply --skip-install --transport direct --no-link
 
 # config / ローカル state の確認。runtime readiness はサービス起動後に full doctor で確認する
 ~/.local/bin/hachi doctor --offline
 ```
 
 `--apply` を付けても、既存の `$HACHI_KANBAN_HOME/config.json` や
-別の `~/.local/bin/hachi` は上書きしません。
+別の `~/.local/bin/hachi` は上書きしません。同じ引数での再実行は冪等です。
+
+`--no-link` を付けない場合、`~/.local/bin` には `hachi` の symlink に加えて
+オーケストレーター運用ヘルパーの exec シム（`hachi-handover-now`、`hhn`、
+`hachi-orch-enable`、`cc-cache-ttl`、`hachi-watch-stop`）も作られます。
+CLI 本体の動作には不要ですが、`hachi doctor` の `orchestrator helpers` 検査は
+この 5 本が揃っていることを合格条件にしており、欠けていると doctor 全体が
+exit 1 になります（`packages/cli/src/commands/doctor.ts` の
+`checkOrchestratorHelpers`）。`--no-link` で入れた場合は、この 1 項目が
+NG になるのを承知で使ってください。5 本のうち 4 本（`hachi-handover-now`、`hhn`、
+`cc-cache-ttl`、`hachi-watch-stop`）は `python3` を要求します。
+
 詳しい要件、環境変数、bridge 構成、LaunchAgent は
 [`docs/portable-install.md`](docs/portable-install.md) を参照してください。
 
@@ -86,6 +111,12 @@ bridge token の既定配置は `$HACHI_KANBAN_HOME/credentials/{codex,claude}-b
 `examples/config.direct.json` の model は例です。アカウントで利用できる model と
 runtime version を `hachi doctor` で確認し、必要なら config の profile、allowlist、
 `modelTransportPolicies` を合わせてください。互換性を推測した fallback はしません。
+
+なお `hachi doctor` が green でも direct の readiness は証明されません。
+`codex` / `claude` CLI が見つからない場合、`model transport (<profile>)` 検査は
+fail ではなく `警告:` 付きの合格（decision=unknown）になります
+（`packages/cli/src/model-transport-observability.ts`）。実際に worker が起動するかは
+1 タスク流して確認してください。
 
 ## CLI
 
@@ -112,6 +143,12 @@ worker / reviewer はタスクごとに model、effort、speed を指定でき�
 README の値をそのまま運用へ写さず `hachi admin resolve` で確認してください。
 
 ```bash
+# 最小形。--title / --body / --tenant が必須オプション
+hachi task create --title "..." --body "..." --tenant dev
+
+# オーケストレーターとして作る場合（--actor-kind orchestrator は
+# --orchestrator / --session / --generation を 3 つとも要求し、
+# 有効な orchestrator session が board に登録されている必要がある）
 hachi task create --title "..." --body "..." --tenant dev \
   --actor-kind orchestrator --orchestrator <id> --session <session-id> --generation <n>
 

@@ -1,5 +1,11 @@
 # Supervisor launchd セットアップ
 
+> **前提: macOS 専用。** この手順書は launchd（`launchctl` / LaunchAgent / `plutil`）に
+> 依存します。Linux では使えません。Linux で常駐させる場合は plist を使わず、
+> `pnpm --filter @hachi/supervisor run start -- --interval 30 --apply` を systemd user unit
+> などの各 OS の常駐機構に載せてください（このリポジトリはその unit を同梱しません）。
+> 常駐化の前に、`docs/portable-install.md` §5 の foreground smoke を通してください。
+
 ## 概要
 
 `packages/supervisor` は 2 つの起動モードを持つ（`docs/contract.md` §10）。
@@ -22,8 +28,10 @@ tick が進まず、`launchctl kickstart` で明示的に起動しない限り�
 原因調査の結果、これは supervisor 固有の設定不備ではなく、**launchd の GUI
 セッションドメイン（`gui/<uid>`）が「on-demand-only mode」に入っている間は
 StartInterval・RunAtLoad・KeepAlive による自動再起動など、あらゆる
-non-demand（受動的）トリガーが一切スポーンされない**という、このマシンの
-セッション状態に起因する挙動であることが判明した（詳細は本ファイル末尾の
+non-demand（受動的）トリガーが一切スポーンされない**という、その端末の
+セッション状態に起因する挙動であることが判明した（作者の macOS 環境で観測。
+再現条件は OS バージョンやセッション状態に依存するため、全環境で起きるとは限らない。
+詳細は本ファイル末尾の
 「既知の制約: on-demand-only mode」参照）。`launchctl kickstart` のような
 明示的（on-demand）トリガーだけがこのゲートを通過できる。
 
@@ -79,17 +87,16 @@ non-demand（受動的）トリガーが一切スポーンされない**とい�
 理由:
 
 - `pnpm` は `pnpm.cjs` を `#!/usr/bin/env node` shebang で起動するコマンドだ
-  が、`EnvironmentVariables` に最小 `PATH`
-  （`~/.local/bin:~/.n/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`）
-  を渡すだけで shebang 経由の `node` 解決・`pnpm --filter ... run start`
-  の実行まで問題なく動くことを、launchd 相当の最小環境
+  が、`EnvironmentVariables` に最小 `PATH` を渡すだけで shebang 経由の
+  `node` 解決・`pnpm --filter ... run start` の実行まで問題なく動くことを、
+  launchd 相当の最小環境
   （`env -i PATH=... HOME=... <resolved-pnpm> --filter @hachi/supervisor
   run start -- --interval 30 --apply`）で実機確認済み。
 - `zsh -lc` はログインシェルで `.zshrc` / `.zprofile` を読み込むため、対話
   シェル側の設定変更（alias、PATH 追加等）が launchd 実行結果に意図せず影
   響する余地がある。絶対パス直接指定の方が再現性が高く、
-  `runbooks/templates/` 配下の他テンプレート（`kanban-review-finalizer` /
-  `kanban-integration-watcher` 等）とも流儀が揃う。
+  `runbooks/templates/` 配下の 4 テンプレート（supervisor / web / backup /
+  watchdog）で流儀が揃う。
 
 pnpm や node が通常の `PATH` に無い場合は `HACHI_PNPM_BIN` / `HACHI_NODE_BIN`
 に executable の絶対パスを渡して renderer を実行する。template や生成済み
@@ -117,6 +124,11 @@ done
 
 renderer は clone root、user home、state root、Node/pnpm、launchd `PATH` を解決し、
 未解決 placeholder、未知 placeholder、非実行可能 toolchain を fail-closed で拒否する。
+`--launchd-path` / `HACHI_LAUNCHD_PATH` を渡さない場合、plist へ埋まる `PATH` は
+`dirname(node)`、`dirname(pnpm)`、`~/.local/bin`、`~/.local/share/pnpm`、
+`/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`、`/bin` を重複排除した並び
+（`scripts/render-launchd.mjs` の `resolveRenderConfig`）。version manager 配下の
+Node/pnpm を使う端末では、その bin directory が先頭に入るため追加指定は不要。
 `HACHI_KANBAN_BOARD`、`HACHI_KANBAN_WEB_PORT`、bridge URL / token file path などの
 端末固有値は shell environment から生成物へ渡す。secret **value** は渡さない。
 remote bridgeはHTTPSと`HACHI_BRIDGE_ALLOW_REMOTE=1`を両方要求する。token fileは現在user所有の
@@ -302,9 +314,10 @@ code（`0` が正常終了、プロセスが稼働中は前回値のまま）。
 
 ## 既知の制約: on-demand-only mode
 
-このマシンの `gui/<uid>` launchd ドメインは、断続的に「on-demand-only
-mode」という状態に入る（`log show` で `launchd: [gui/501 [...]:] pending
-spawn, domain in on-demand-only mode: <label>` として観測できる）。この間
+一部の macOS 環境では、`gui/<uid>` launchd ドメインが断続的に
+「on-demand-only mode」という状態に入る（`log show` で
+`launchd: [gui/<uid> [...]:] pending spawn, domain in on-demand-only mode: <label>`
+として観測できる。`<uid>` は `id -u` の値）。この間
 は launchd の non-demand（受動的）トリガー——`StartInterval`、
 `RunAtLoad`、KeepAlive によるクラッシュ後の自動再起動——が一切実行され
 ない。`launchctl kickstart` のような on-demand（明示的）トリガーだけが
@@ -312,9 +325,10 @@ spawn, domain in on-demand-only mode: <label>` として観測できる）。こ
 
 macOS 標準の Apple 製 LaunchAgent（`com.apple.FolderActionsDispatcher`、
 `com.apple.Siri.agent` 等）も同じログで on-demand-only mode の影響を受け
-ているのが確認できるため、supervisor 固有の設定不備ではなく、このマシン
+ているのが確認できるため、supervisor 固有の設定不備ではなく、その端末
 のセッション状態（スクリーンロック / 非対話セッションの継続時間等が有力）
-に起因する OS レベルの挙動と考えられる。
+に起因する OS レベルの挙動と考えられる。自分の端末で起きているかどうかは、
+上記の `log show` の行が出るかで判別する。
 
 **この制約下での運用上の意味**:
 
@@ -333,7 +347,7 @@ macOS 標準の Apple 製 LaunchAgent（`com.apple.FolderActionsDispatcher`、
   `state` / `pid` を確認し、`not running` に気づいたら kickstart で
   復帰させる運用とする。
 - 恒久対処（要検討・未実施）: LaunchDaemon 化（システムコンテキストで
-  GUI セッションドメインのゲートを受けない）、あるいはこのマシンの
+  GUI セッションドメインのゲートを受けない）、あるいは端末の
   スクリーンロック・省電力設定の見直し等が候補だが、いずれも本タスクの
   スコープ外（`hachi-kanban` の src 変更なし、他システムへの影響なし、
   の制約下）のため見送り、運用上の回避策として上記の kickstart 復帰手順
@@ -423,7 +437,9 @@ ls -lt "${HACHI_KANBAN_HOME:-$HOME/.hachi-kanban}/backups/"
 ```
 
 `backups/` 配下に `kanban-<board>-<YYYYMMDD-HHmmss>.db` 形式のファイルが
-作成されていれば成功。世代数が keep（既定 14）を超えている場合は古いもの
+作成されていれば成功。タイムスタンプは実装が JST（UTC+9）固定で組み立てるため
+（`packages/cli/src/backup.ts` の `toJstTimestamp`）、他タイムゾーンの端末では
+ローカル時刻と一致しない。世代数が keep（既定 14）を超えている場合は古いもの
 から削除されているはずなので、件数も併せて確認する。
 
 ### アンインストール
@@ -488,7 +504,7 @@ tail -5 "${HACHI_KANBAN_HOME:-$HOME/.hachi-kanban}/logs/watchdog.launchd.err"
 # kill-switch の確認（検査 skip → 再開）
 touch "${HACHI_KANBAN_HOME:-$HOME/.hachi-kanban}/watchdog.disabled"
 # -> 次周期（最大60秒後）以降、watchdog.log に陳腐化/欠如の検知ログが出ないこと
-rm "${HACHI_KANBAN_HOME:-$HOME/.hachi-kanban}/watchdog.disabled"
+/bin/rm -f "${HACHI_KANBAN_HOME:-$HOME/.hachi-kanban}/watchdog.disabled"
 # -> 次周期から検査が再開されること
 ```
 

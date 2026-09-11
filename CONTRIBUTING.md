@@ -66,6 +66,7 @@ pnpm --filter @hachi/web build    # Web 看板の vite build
 ```
 
 CI（`.github/workflows/ci.yml`）はこの 4 つをこの順で実行します。
+CI が使うのは Node.js 24 / ubuntu-latest です（ローカルの最小要件 22.13 とは別）。
 PR を出す前にローカルで 4 つすべて通してください。
 
 `pnpm test` は `--workspace-concurrency=1` で package を直列に実行します。

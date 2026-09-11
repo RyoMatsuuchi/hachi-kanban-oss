@@ -24,7 +24,9 @@ while true; do hachi orchestrator session heartbeat "$SID" --generation "$GEN" >
 § 番号は両書で一意（reference 側も元の番号のまま）。
 
 スキル: `hachi-kanban-orchestrator`（運用入口）/ `hachi-kanban`（CLI 構文）/
-`hachi-kanban-planner`（分解設計）。CLI はどの cwd からでも `hachi <cmd>`（~/.local/bin シム → repo `bin/hachi` に委譲）。
+`hachi-kanban-planner`（分解設計）。**これらの Claude Code スキルは本リポジトリに同梱していない**
+（作者のローカル環境の `~/.claude/skills/` に置く運用資産であり、公開対象は看板基盤の実装と仕様のみ）。
+同梱しているスキルは `skills/` 配下の2本だけ。CLI はどの cwd からでも `hachi <cmd>`（~/.local/bin シム → repo `bin/hachi` に委譲）。
 非対話環境（pnpm が PATH に無い）では repo の `bin/hachi <cmd>` を直接使う。
 
 ## 最近の仕様変更を知る方法

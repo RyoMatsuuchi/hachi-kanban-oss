@@ -7,7 +7,10 @@
 共有されません。同じ看板を複数端末から同時操作する構成は、現在の SQLite + loopback
 architecture の範囲外です。
 
-repository は private です。利用者には clone 前に GitHub の明示的な access grant が必要です。
+OS の境界: 本体（CLI / supervisor / Web 看板）は macOS と Linux のどちらでも動きます。
+§7 の LaunchAgent による常駐化だけが macOS 専用です（`launchctl` / `plutil` に依存）。
+Linux で常駐させる場合は §5 の foreground 実行を systemd user unit などに載せてください
+（このリポジトリは unit ファイルを同梱しません）。
 
 ## 1. 前提を揃える
 
@@ -23,6 +26,17 @@ direct transport を使う provider については、その利用者自身が C
 codex --version
 claude --version
 ```
+
+構成によって追加で必要になるもの（いずれも素の CLI 利用では不要）。
+
+| 依存 | 必要になる条件 |
+|---|---|
+| `tmux` | `hachi orchestrator handover` / 後継 orchestrator の起動。稼働中 session がある状態で不在だと `hachi doctor` が失敗する |
+| `python3` | `~/.local/bin` の運用ヘルパー 5 本のうち 4 本（`hachi-handover-now` / `hhn` / `cc-cache-ttl` / `hachi-watch-stop`）。残る `hachi-orch-enable` は bash |
+| Docker / `lsof` | config に `runtimeResources` を書いて runtime resource profile を使う場合（§8 参照） |
+
+`sqlite` / `sqlite3` コマンドは不要です。DB アクセスは npm の `better-sqlite3` だけを使います。
+`git` は supervisor の finalize / review / monitor ステージが直接実行するため、実運用では必須です。
 
 認証情報を repository、chat、setup script の引数へ書かないでください。
 
@@ -49,15 +63,33 @@ node scripts/setup-local.mjs --transport direct --skip-install
 node scripts/setup-local.mjs --apply --transport direct --skip-install
 ```
 
-適用内容:
+適用内容（`scripts/setup-local.mjs` の `applyPlan`）:
 
 - `$HACHI_KANBAN_HOME`（既定 `~/.hachi-kanban`）を 0700 で作成
-- `logs/` と `credentials/` を 0700 で作成
-- state root に config が無い場合だけ `examples/config.direct.json` を 0600 で配置
+- その配下の `logs/` と `credentials/` を 0700 で作成
+- state root に config が無い場合だけ `examples/config.<transport>.json` を 0600 で配置
 - `~/.local/bin/hachi` が無い場合だけ、clone 内の `bin/hachi` への symlink を作成
+- `~/.local/bin` へオーケストレーター運用ヘルパーの exec シムを作成（`--no-link` で抑止）:
+  `hachi-handover-now`、`hhn`、`hachi-orch-enable`、`cc-cache-ttl`、`hachi-watch-stop`。
+  いずれも `#!/bin/sh` + `exec "<repo>/scripts/..." "$@"` の 1 行シムで、実体は repo 側に置く。
+  CLI 本体の利用には不要なので、オーケストレーター運用をしないなら `--no-link` でよい
 
-既存 config と、別 target を指す symlink / 通常ファイルは上書きしません。依存 install も
-setup に任せる場合は `--skip-install` を外します。
+既存 config と、別 target を指す symlink / 通常ファイルは上書きしません。同じ引数での
+再実行は冪等です（2 回目は `config=unchanged, link=unchanged, helpers=all unchanged`）。
+
+option（`--help` と同じ内容）:
+
+| option | 既定 | 説明 |
+|---|---|---|
+| `--apply` | 無指定は dry-run | 計画を実行する |
+| `--transport <kind>` | `direct` | `direct` または `bridge`。config template の選択に使う |
+| `--hachi-home <path>` | `HACHI_KANBAN_HOME` または `~/.hachi-kanban` | state root。`/`、`$HOME` そのもの、`/` 直下（`/tmp` 等）は拒否（`scopedStateRoot`） |
+| `--bin-dir <path>` | `~/.local/bin` | symlink とヘルパーシムの配置先 |
+| `--pnpm-bin <path>` | `HACHI_PNPM_BIN` または `pnpm` | 依存 install に使う pnpm |
+| `--skip-install` | 無指定は install する | `pnpm install --frozen-lockfile` を実行しない |
+| `--no-link` | 無指定は link する | `hachi` symlink とヘルパーシムを作成しない |
+
+依存 install も setup に任せる場合は `--skip-install` を外します。
 
 bridge を選ぶ場合:
 
@@ -108,6 +140,18 @@ direct profile は provider runtime と model/transport policy を確認しま�
 `doctor --offline` は network / runtime probe を意図的に skip する構文・local state 向け診断で、
 worker readiness の証明ではありません。
 
+full doctor も readiness の証明ではありません。`codex` / `claude` CLI が見つからない場合、
+`model transport (<profile>)` 検査は fail ではなく `警告:` 付きの合格（decision=unknown）
+になります（`packages/cli/src/model-transport-observability.ts`）。
+また `--offline` が効くのは bridge 2 件・`model transport (*)`・`supervisor heartbeat`・
+`web healthz`・`native communication readiness` の 5 種だけで、`handover preflight`
+（`which tmux` / `tmux list-sessions`）と `passthrough patch status`（`lsof`）は
+`--offline` でも実行されます。
+
+`orchestrator helpers` 検査は `~/.local/bin` の運用ヘルパー 5 本が揃っていることを
+合格条件にしています（§3 の `--no-link` を使うとこの 1 項目が NG になり doctor 全体が
+exit 1 になります）。
+
 foreground smoke が通るまで LaunchAgent を install しないでください。
 
 ## 6. 環境変数
@@ -116,7 +160,7 @@ foreground smoke が通るまで LaunchAgent を install しないでくださ�
 |---|---|---|
 | `HACHI_KANBAN_HOME` | `~/.hachi-kanban` | 端末固有 state root |
 | `HACHI_KANBAN_BOARD` | `dev` | board slug |
-| `HACHI_NODE_BIN` | 自動探索 | `bin/hachi` が使う Node.js の絶対パス |
+| `HACHI_NODE_BIN` | 自動探索 | `bin/hachi` が使う Node.js の絶対パス。自動探索は `~/.vite-plus/bin/node` → `~/.n/bin/node` → `~/.volta/bin/node` → `PATH` の順（`bin/hachi`）。別の version manager を使う端末では明示指定が確実 |
 | `HACHI_PNPM_BIN` | `pnpm` | setup / LaunchAgent generator が使う pnpm |
 | `HACHI_CODEX_BRIDGE_URL` | `http://127.0.0.1:3456` | Codex bridge URL |
 | `HACHI_CODEX_BRIDGE_TOKEN_FILE` | `$HACHI_KANBAN_HOME/credentials/codex-bridge-token` | Codex bridge token file。既存の別配置を使う場合だけ上書き |
@@ -124,12 +168,19 @@ foreground smoke が通るまで LaunchAgent を install しないでくださ�
 | `HACHI_CLAUDE_BRIDGE_TOKEN_FILE` | `$HACHI_KANBAN_HOME/credentials/claude-bridge-token` | Claude bridge token file。既存の別配置を使う場合だけ上書き |
 | `HACHI_BRIDGE_ALLOW_REMOTE` | core は unset | renderer は `0` を明示。HTTPSのremote bridgeを許可するときだけ `1` |
 | `HACHI_KANBAN_WEB_PORT` | `9131` | local Web port |
+| `HACHI_KANBAN_REPO_ROOT` | clone root | LaunchAgent generator が plist へ埋める repo root（`--repo-root` と同義） |
+| `HACHI_LAUNCHD_PATH` | 解決済み bin dir 群 | plist の `PATH`。未指定時は `dirname(node)`、`dirname(pnpm)`、`~/.local/bin`、`~/.local/share/pnpm`、`/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`、`/bin` |
+| `HACHI_WATCHDOG_STALE_SEC` | `180` | watchdog が supervisor heartbeat を陳腐化とみなす秒数（`scripts/hachi-watchdog.sh`） |
+| `HERMES_HOME` | `~/.hermes-hachi-dev` | 旧システム（legacy-hermes）由来の外部 appliance 連携用。読み手は 2 つだけ: doctor の `passthrough patch status` 検査（`$HERMES_HOME/even-shared/passthrough-patch-status.json` を読む）と、supervisor の external runtime generation root。新規導入では設定不要 |
 
 `.env` は自動 load しません。interactive shell の export も LaunchAgent へ自動継承されません。
 LaunchAgent を生成するときは、必要な non-secret 値と token **path** を generator へ渡します。
 token 値自体を plist に埋め込まないでください。
 
-## 7. LaunchAgent
+## 7. LaunchAgent（macOS 専用）
+
+この節は macOS だけに当てはまります。Linux では plist を使わず、§5 の foreground 実行を
+systemd user unit などへ載せてください。
 
 `runbooks/templates/*.plist` は checked-in path をそのまま install するファイルではなく、
 端末固有の absolute path を埋める source template です。生成・検証手順は
@@ -155,6 +206,5 @@ token 値自体を plist に埋め込まないでください。
 2. CI と clean-clone smoke を通す
 3. default branch へ merge
 4. remote SHA を新規 clone で再確認
-5. 対象利用者へ repository access を付与
 
 branch protection が無い repository では、この順序を手動 gate として維持します。
