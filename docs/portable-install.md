@@ -148,13 +148,17 @@ full doctor も readiness の証明ではありません。`codex` / `claude` CL
 （`which tmux` / `tmux list-sessions`）と `passthrough patch status`（`lsof`）は
 `--offline` でも実行されます。
 
-`orchestrator helpers` 検査は `~/.local/bin` の運用ヘルパー 5 本の導入状態を見ますが、
-この 5 本を必要とするのはオーケストレーター運用者だけなので、欠けていても fail にはならず
-`警告:` 付きの合格（`model transport (*)` の decision=unknown と同じ扱い）になります。
-§3 の `--no-link` を使うとこの 1 項目に警告が出ますが、この項目が原因で doctor が
-exit 1 になることはありません（他の検査は独立に fail し得ます）。
-警告文にはどのシムがどの状態（`missing` / `not-a-shim` / `unexpected-source` /
-`shim-not-executable` / `source-not-executable` 等）なのかが内訳として出ます。
+`orchestrator helpers` 検査は `~/.local/bin` の運用ヘルパー 5 本の導入状態を見て、
+**未導入は警告、導入済みだが壊れている場合は失敗**として報告します。
+この 5 本を必要とするのはオーケストレーター運用者だけなので、1 本も無い（`missing`）のは
+正常状態として `警告:` 付きの合格（`model transport (*)` の decision=unknown と同じ扱い）に
+なります。§3 の `--no-link` を使うとこの 1 項目に警告が出ますが、それが原因で
+exit 1 になることはありません。
+一方、シムを置いたのに壊れている場合（`not-a-shim` / `unexpected-source` / `outside-repo` /
+`shim-not-executable` / `source-missing` / `source-not-executable` 等）は `ok: false` で
+doctor 全体が exit 1 になります。この状態にはシム経由の実行が
+`exec: Permission denied` 等で失敗する実害があり、良性の読み方がないためです。
+どちらの場合も、どのシムがどの状態なのかが detail に内訳として出ます。
 
 foreground smoke が通るまで LaunchAgent を install しないでください。
 

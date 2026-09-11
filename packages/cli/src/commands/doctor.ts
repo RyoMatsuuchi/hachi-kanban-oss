@@ -106,9 +106,10 @@ const DEFAULT_ORCHESTRATOR_HELPER_REPO_ROOT = resolve(
 
 /**
  * オーケストレーター運用ヘルパー5本。マシン再構築で `~/.local/bin` 配下が消えると
- * playbook の手順が実行不能になるため doctor で導入状態を検査し、欠落は警告として
- * 報告する（t_eac0371a7a1a368e）。オーケストレーター運用者以外には不要なシムなので
- * 未導入でも doctor 全体は fail させない。
+ * playbook の手順が実行不能になるため doctor で導入状態を検査する（t_eac0371a7a1a368e）。
+ * オーケストレーター運用者以外には不要なシムなので、未導入（`missing`）は警告として
+ * 報告して doctor 全体は fail させない。導入済みなのに壊れている場合は fail させる
+ * （分割の根拠は `BENIGN_ORCHESTRATOR_HELPER_STATES`）。
  * この一覧は scripts/setup-local.mjs の ORCHESTRATOR_HELPERS と対応させること
  * （setup-local.mjs がこのシムを生成する側）。test-support.ts の createTestDeps() が
  * fixture 生成のためにこの定数を再利用する。
@@ -1737,6 +1738,32 @@ interface OrchestratorHelperResult {
   readonly detail: string;
 }
 
+/**
+ * 「単に導入していないだけ」の良性 state。ここに載る state だけが警告（`ok: true`）に落ちる。
+ *
+ * 分割理由: この5本のシムを必要とするのはオーケストレーター運用者だけなので、
+ * 一般利用者の `~/.local/bin` に1本も無いのは**正常**であり fail させてはならない。
+ * 一方「シムは置いてあるのに壊れている」（形式不一致・別 checkout を指す・実行権限が無い・
+ * 解決先が無い等）には良性の読み方が一つも無く、放置するとシム経由の実行が
+ * `exec: Permission denied` などで失敗する実害がある。`outside-repo` は
+ * `=ok` で終わる罠パスでの fail-open を検知する要でもあるため必ず fail に残す
+ * （t_eac0371a7a1a368e rework 2周目）。
+ *
+ * 集合は「良性」側だけを列挙する（fail-closed）。state を将来追加したとき、
+ * 明示的にここへ載せない限り自動的に fail 側へ倒れる。
+ */
+const BENIGN_ORCHESTRATOR_HELPER_STATES: ReadonlySet<OrchestratorHelperState> = new Set<
+  OrchestratorHelperState
+>(["missing"]);
+
+/**
+ * state が「未導入だけ」を意味する良性なものか。`ok` 自身は良性かどうかではなく
+ * 「揃っている」で判定するので、ここでは含めない（呼び出し側で別に見る）。
+ */
+function isBenignHelperState(state: OrchestratorHelperState): boolean {
+  return BENIGN_ORCHESTRATOR_HELPER_STATES.has(state);
+}
+
 /** `OrchestratorHelperResult` を組み立てる（表示用 detail は `<name>=<state>[:<extra>]` 形式に統一）。 */
 function orchestratorHelperResult(
   name: string,
@@ -1828,26 +1855,42 @@ function inspectOrchestratorHelper(
 /**
  * (N) `~/.local/bin` 配下のオーケストレーター運用ヘルパー
  * （hachi-handover-now/hhn/hachi-orch-enable/cc-cache-ttl/hachi-watch-stop）が
- * repo内のexecシムとして導入されているかを「警告として」報告する。マシン再構築でこれらが
- * 失われるとplaybookの引き継ぎ・消費監視の立ち上げ手順が実行不能になる（t_eac0371a7a1a368e）。
- * ただしこの5本はオーケストレーター運用者だけが必要とするもので、一般利用者の環境には
- * 存在しないのが正常なため、欠落でも `ok: false` にはせず `detail` に `警告: ` を付けて
- * 報告する（`model transport (*)` の decision=unknown と同じ扱い）。
- * 警告を出すかの判定は必ず構造化された `state` の完全一致で行い、表示用の `detail` 文字列
+ * repo内のexecシムとして導入されているかを検査する。マシン再構築でこれらが失われると
+ * playbookの引き継ぎ・消費監視の立ち上げ手順が実行不能になる（t_eac0371a7a1a368e）。
+ *
+ * 結果は state を良性と実害に分けて報告する（`isBenignHelperState`）。
+ * - 全5本 `ok`: 警告なしの合格
+ * - 良性（`missing`）だけが混じる: **警告付きの合格**。この5本を必要とするのは
+ *   オーケストレーター運用者だけで、一般利用者の環境に1本も無いのは正常なため、
+ *   初見の利用者の `hachi doctor` を exit 1 にしない
+ *   （`model transport (*)` の decision=unknown と同じ扱い）
+ * - 実害（形式不一致・別checkoutを指す・実行権限欠落・解決先欠落 等）が1本でもある: **fail**。
+ *   シムを置いたのに壊れている状態には良性の読み方が無く、運用者が気付けないと困る
+ *
+ * 判定は必ず構造化された `state` の完全一致で行い、表示用の `detail` 文字列
  * （解決先パスなど任意の内容を含み得る）は判定に使わない（t_eac0371a7a1a368e rework 2周目）。
- * 欠落内容はオーケストレーター運用者に見えないと困るので、`state` ごとの内訳
- * （missing / not-a-shim / unexpected-source 等）は警告時も `detail` にそのまま残す。
+ * `state` ごとの内訳（missing / not-a-shim / unexpected-source 等）は警告時も fail 時も
+ * `detail` にそのまま残す（運用者が修復対象を内訳から判断するため）。
  */
 function checkOrchestratorHelpers(deps: CliDeps): DoctorCheck {
   const name = "orchestrator helpers";
   const binDir = deps.orchestratorHelperBinDir ?? join(homedir(), ".local", "bin");
   const repoRoot = resolve(deps.orchestratorHelperRepoRoot ?? DEFAULT_ORCHESTRATOR_HELPER_REPO_ROOT);
   const results = ORCHESTRATOR_HELPER_SPECS.map((spec) => inspectOrchestratorHelper(binDir, repoRoot, spec));
-  const allInstalled = results.every((result) => result.state === "ok");
   const breakdown = `binDir=${binDir} repoRoot=${repoRoot} ${results.map((result) => result.detail).join(" ")}`;
+  const broken = results.filter((result) => result.state !== "ok" && !isBenignHelperState(result.state));
+  if (broken.length > 0) {
+    return {
+      name,
+      ok: false,
+      detail: `導入済みのヘルパーシムが壊れています（${broken.map((result) => result.name).join(",")}）。` +
+        `修復は node scripts/setup-local.mjs --apply --skip-install: ${breakdown}`,
+    };
+  }
+  const allInstalled = results.every((result) => result.state === "ok");
   const detail = allInstalled
     ? breakdown
-    : `${DOCTOR_WARNING_PREFIX}オーケストレーター運用ヘルパーが未導入・不一致・実行不能です` +
+    : `${DOCTOR_WARNING_PREFIX}オーケストレーター運用ヘルパーが未導入です` +
       `（オーケストレーター運用者以外は無視可。導入は` +
       ` node scripts/setup-local.mjs --apply --skip-install）: ${breakdown}`;
   return { name, ok: true, detail };
