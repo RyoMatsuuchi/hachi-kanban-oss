@@ -1,0 +1,76 @@
+{
+  "profiles": {
+    "plan": {
+      "provider": "claude",
+      "model": "claude-opus-4-6",
+      "transport": "bridge"
+    },
+    "review": {
+      "provider": "codex",
+      "model": "gpt-5.6-sol",
+      "transport": "bridge",
+      "effort": "high"
+    },
+    "implement": {
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "transport": "bridge",
+      "effort": "max",
+      "speed": "standard"
+    },
+    "docs": {
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "transport": "bridge",
+      "effort": "high"
+    }
+  },
+  "allowlist": {
+    "codex": [
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+      "gpt-5.4"
+    ],
+    "claude": [
+      "claude-opus-5",
+      "claude-opus-4-6",
+      "claude-sonnet-5"
+    ]
+  },
+  "modelTransportPolicies": [
+    {
+      "id": "codex-bridge-gpt-5.6-luna-example",
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "transport": "bridge",
+      "minimumRuntimeVersion": "0.144.1",
+      "supportedEfforts": ["low", "medium", "high", "xhigh", "max"],
+      "supportedSpeeds": ["standard", "fast"]
+    }
+  ],
+  "communication": {
+    "codex": {
+      "rollout": "off",
+      "sameHostOnly": true,
+      "claimLeaseSeconds": 60,
+      "bindingTtlSeconds": 300
+    },
+    "claude": {
+      "rollout": "off",
+      "sameHostOnly": true,
+      "claimLeaseSeconds": 60,
+      "bindingTtlSeconds": 300
+    }
+  },
+  "resourceGuard": {
+    "maxInFlight": 4,
+    "maxLaunchesPerTick": 1
+  },
+  "logging": {
+    "maxSizeBytes": 52428800,
+    "maxGenerations": 10
+  },
+  "defaultProfile": "implement"
+}

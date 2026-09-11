@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+# Claude Code のプロンプトキャッシュ残り時間と現在の文脈サイズを表示する。
+# 使い方:
+#   cc-cache-ttl                      # tmux セッション名 or cwd から自動判定
+#   cc-cache-ttl --session <uuid|8hex>
+#   cc-cache-ttl --format tmux|plain|json
+# 副作用ゼロ（ローカルファイルの stat と tail を読むだけ。API を1回も叩かない）。
+import argparse, glob, json, os, re, subprocess, sys, time
+
+HOME = os.path.expanduser("~")
+PROJECTS = os.environ.get("CC_CACHE_TTL_PROJECTS_DIR", os.path.join(HOME, ".claude", "projects"))
+UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+def ttl_seconds():
+    """ENABLE_PROMPT_CACHING_1H=1 なら 1時間、無ければ 5分。"""
+    try:
+        with open(os.path.join(HOME, ".claude", "settings.json")) as f:
+            env = (json.load(f).get("env") or {})
+        if str(env.get("ENABLE_PROMPT_CACHING_1H", "")).strip() == "1":
+            return 3600
+    except Exception:
+        pass
+    return 300
+
+def detect_session():
+    """tmux セッション名の末尾 UUID → 無ければ cwd 由来の project dir を特定する。"""
+    name = os.environ.get("CC_CACHE_TTL_TMUX_SESSION", "")
+    if not name:
+        try:
+            name = subprocess.run(["tmux", "display-message", "-p", "#{session_name}"],
+                                  capture_output=True, text=True, timeout=2).stdout.strip()
+        except Exception:
+            name = ""
+    m = re.search(rf"({UUID_PATTERN})$", name)
+    if m:
+        hits = glob.glob(os.path.join(PROJECTS, "*", m.group(1) + ".jsonl"))
+        return hits[0] if len(hits) == 1 else None
+    # cwd を project dir 名へ変換（Claude Code は path の非英数を - に潰す）
+    cwd = os.environ.get("CC_CACHE_TTL_CWD") or os.getcwd()
+    slug = re.sub(r"[^A-Za-z0-9]", "-", cwd)
+    hits = glob.glob(os.path.join(PROJECTS, slug, "*.jsonl"))
+    return hits[0] if len(hits) == 1 else None
+
+def last_context(path, tail_bytes=400_000):
+    """末尾から遡って最後の usage を持つ assistant 応答の文脈サイズを取る。"""
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        f.seek(max(0, size - tail_bytes))
+        chunk = f.read()
+    lines = chunk.split(b"\n")
+    if size > tail_bytes and lines:
+        lines = lines[1:]  # 途中で切れた先頭行は捨てる
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            u = ((json.loads(line).get("message") or {}).get("usage")) or None
+        except Exception:
+            continue
+        if not u:
+            continue
+        cc = u.get("cache_creation") or {}
+        w = cc.get("ephemeral_5m_input_tokens", 0) + cc.get("ephemeral_1h_input_tokens", 0)
+        if not w:
+            w = u.get("cache_creation_input_tokens", 0)
+        return u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + w
+    return None
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--session")
+    ap.add_argument("--format", default="tmux", choices=["tmux", "plain", "json"])
+    # TTL の計時起点はリクエスト開始で、mtime は応答終了。その差ぶん残り時間を短めに見積もる
+    ap.add_argument("--margin", type=int, default=60)
+    a = ap.parse_args()
+
+    path = None
+    if a.session:
+        exact_hits = []
+        if re.fullmatch(UUID_PATTERN, a.session):
+            exact_hits = glob.glob(os.path.join(PROJECTS, "*", a.session + ".jsonl"))
+        if exact_hits:
+            path = exact_hits[0] if len(exact_hits) == 1 else None
+        else:
+            pref = a.session[:8]
+            hits = glob.glob(os.path.join(PROJECTS, "*", pref + "*.jsonl"))
+            path = hits[0] if len(hits) == 1 else None
+    else:
+        path = detect_session()
+
+    if not path or not os.path.exists(path):
+        if a.format == "json":
+            print(json.dumps({"transcript": None, "ttlSeconds": ttl_seconds(),
+                              "idleSeconds": None, "marginSeconds": a.margin,
+                              "remainingSeconds": None, "contextTokens": None}))
+        else:
+            print("" if a.format == "tmux" else "session-not-found")
+        return 0
+
+    ttl = ttl_seconds()
+    idle = time.time() - os.path.getmtime(path)
+    remain = ttl - idle - a.margin
+    ctx = last_context(path)
+    ctx_s = f"{round(ctx/1000)}K" if ctx else "?"
+
+    if a.format == "json":
+        print(json.dumps({"transcript": path, "ttlSeconds": ttl, "idleSeconds": round(idle),
+                          "marginSeconds": a.margin, "remainingSeconds": round(remain),
+                          "contextTokens": ctx}))
+        return 0
+
+    if remain <= 0:
+        # キャッシュは既に失効。乗り換え費用が実質ゼロの唯一の窓。
+        body = f"CACHE COLD ({int(idle//60)}m idle) | {ctx_s} — 引き継ぐなら今"
+        print(f"#[fg=colour203,bold]{body}#[default]" if a.format == "tmux" else body)
+        return 0
+
+    mm, ss = divmod(int(remain), 60)
+    body = f"cache {mm:02d}:{ss:02d} | {ctx_s}"
+    if a.format != "tmux":
+        print(body); return 0
+    color = "colour114" if remain > ttl * 0.33 else ("colour179" if remain > 300 else "colour203")
+    print(f"#[fg={color}]{body}#[default]")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

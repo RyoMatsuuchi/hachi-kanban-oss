@@ -1,0 +1,144 @@
+/* =============================================================================
+ * グローバルスタイル（Tailwind CSS v4, CSS-first 設定。docs/contract.md §20.3）。
+ * Google Fonts 等の外部 CDN には依存しない。'Plus Jakarta Sans' をフォントスタック先頭に
+ * 指定するのみで、端末にインストール済みならそれを使い、無ければ system-ui 系にフォールバックする。
+ * ============================================================================= */
+
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* class ベースのダークモード（Tailwind v4 CSS-first 記法）。
+ * <html> に .dark が付くとその配下すべてに dark: バリアントが適用される
+ * （prefers-color-scheme のメディアクエリではなく、トグル可能なクラス切替方式）。
+ * 実際のクラス付け外しは src/client/hooks/use-theme.ts が担当する。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --canvas: #fbfcfb;
+  --surface: #ffffff;
+  --surface-muted: #f4f8f6;
+  --line: #e2e8e6;
+  --ink: #374140;
+  --ink-muted: #6b7876;
+  --accent: #2f9e77;
+  --accent-soft: #e9f5f0;
+  --accent-strong: #25795c;
+  --accent-hover: #25795c;
+  --on-accent: #ffffff;
+  --ok-soft: #e9f5f0;
+  --ok-strong: #25795c;
+  --warn-soft: #fdf3e2;
+  --warn-strong: #b57816;
+  --danger-soft: #fdeeee;
+  --danger-strong: #c53030;
+  --review-soft: #f0ebfa;
+  --review-strong: #8b5cf6;
+  --overlay: rgb(9 10 10 / 45%);
+  --terminal-canvas: #09090b;
+  --terminal-ink: #f4f4f5;
+  --terminal-muted: #71717a;
+  --terminal-user: #bae6fd;
+  --terminal-user-strong: #38bdf8;
+  --terminal-result: #a7f3d0;
+  --terminal-result-strong: #34d399;
+  --terminal-warn: #fcd34d;
+  --terminal-danger: #fca5a5;
+}
+
+.dark {
+  --canvas: #090a0a;
+  --surface: #101312;
+  --surface-muted: #151a18;
+  --line: #222826;
+  --ink: #c9cecc;
+  --ink-muted: #899490;
+  --accent: #2f9e77;
+  --accent-soft: rgb(47 158 119 / 15%);
+  --accent-strong: #6cc9a8;
+  --accent-hover: #25795c;
+  --on-accent: #090a0a;
+  --ok-soft: rgb(76 183 138 / 13%);
+  --ok-strong: #7bd4ae;
+  --warn-soft: rgb(242 201 76 / 13%);
+  --warn-strong: #f2c94c;
+  --danger-soft: rgb(235 87 87 / 13%);
+  --danger-strong: #f19999;
+  --review-soft: rgb(139 92 246 / 15%);
+  --review-strong: #c4b5fd;
+  --overlay: rgb(9 10 10 / 60%);
+}
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Hiragino Kaku Gothic ProN",
+    "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-strong: var(--ok-strong);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-strong: var(--warn-strong);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-strong: var(--danger-strong);
+  --color-review-soft: var(--review-soft);
+  --color-review-strong: var(--review-strong);
+  --color-overlay: var(--overlay);
+  --color-terminal-canvas: var(--terminal-canvas);
+  --color-terminal-ink: var(--terminal-ink);
+  --color-terminal-muted: var(--terminal-muted);
+  --color-terminal-user: var(--terminal-user);
+  --color-terminal-user-strong: var(--terminal-user-strong);
+  --color-terminal-result: var(--terminal-result);
+  --color-terminal-result-strong: var(--terminal-result-strong);
+  --color-terminal-warn: var(--terminal-warn);
+  --color-terminal-danger: var(--terminal-danger);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-canvas font-sans text-sm text-ink transition-colors;
+}
+
+/* 対話要素のフォーカスはアクセントの 2px ring に統一する。 */
+:where(button, [href], input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* セッションライブビューの端末行。長いプロンプトや JSON 断片で横幅を壊さない。 */
+.terminal-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminal-prefix {
+  display: inline-block;
+  min-width: 5.5rem;
+  padding-right: 0.75rem;
+}
+
+/* テナントチップ: ハッシュ安定色（--chip-hue を element style で設定） */
+.tenant-chip-hash {
+  background-color: hsl(var(--chip-hue) 20% 93%);
+  color: hsl(var(--chip-hue) 30% 38%);
+}
+.dark .tenant-chip-hash {
+  background-color: hsl(var(--chip-hue) 20% 16%);
+  color: hsl(var(--chip-hue) 25% 68%);
+}

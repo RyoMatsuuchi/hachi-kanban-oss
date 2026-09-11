@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- FOUC（Flash of Unstyled Content）防止: React 初回描画より前に、保存済みテーマ設定
+         （localStorage キー hk-theme。src/client/hooks/use-theme.ts と同期させること）を読み、
+         ダーク判定なら即座に <html> へ dark クラスを付与する。取得失敗時は何もしない（既定はライト）。 -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("hk-theme");
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var isDark = stored === "dark" || ((stored === null || stored === "system") && prefersDark);
+          if (isDark) {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (e) {
+          /* localStorage 不可時（プライベートモード等）はライト表示のまま続行する */
+        }
+      })();
+    </script>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#2f9e77" />
+    <title>hachi-kanban</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/client/main.tsx"></script>
+  </body>
+</html>

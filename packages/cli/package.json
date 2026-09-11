@@ -1,0 +1,34 @@
+{
+  "name": "@hachi/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "hachi": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@hachi/adapters": "workspace:*",
+    "@hachi/core": "workspace:*",
+    "better-sqlite3": "^12.11.1",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@hachi/testing": "workspace:*",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^26.1.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

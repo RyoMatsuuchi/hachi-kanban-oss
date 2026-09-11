@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "codex-successor-attestation-publication.v1",
+  "codexHome": "/absolute/active/CODEX_HOME",
+  "installedHooksPath": "/absolute/active/CODEX_HOME/hooks.json",
+  "helperExecutablePath": "/absolute/PATH/hachi",
+  "expectedHookDefinitionHash": "e163d38108e953c81a4be78a7d6be1293ded73cd7d9d8d26ae0703c15634fe55",
+  "expectedHelperExecutableHash": "0000000000000000000000000000000000000000000000000000000000000000"
+}

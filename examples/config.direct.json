@@ -1,0 +1,123 @@
+{
+  "profiles": {
+    "plan": {
+      "provider": "claude",
+      "model": "claude-opus-4-6",
+      "transport": "direct"
+    },
+    "review": {
+      "provider": "codex",
+      "model": "gpt-5.6-sol",
+      "transport": "direct",
+      "effort": "high"
+    },
+    "implement": {
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "transport": "direct",
+      "effort": "max",
+      "speed": "standard"
+    },
+    "docs": {
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "transport": "direct",
+      "effort": "high"
+    }
+  },
+  "allowlist": {
+    "codex": [
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+      "gpt-5.4"
+    ],
+    "claude": [
+      "claude-opus-5",
+      "claude-opus-4-6",
+      "claude-sonnet-5"
+    ]
+  },
+  "modelTransportPolicies": [
+    {
+      "id": "codex-direct-gpt-5.6-sol-example",
+      "provider": "codex",
+      "model": "gpt-5.6-sol",
+      "transport": "direct",
+      "minimumRuntimeVersion": "0.144.1",
+      "supportedEfforts": ["low", "medium", "high", "xhigh", "max"],
+      "supportedSpeeds": ["standard"]
+    },
+    {
+      "id": "codex-direct-gpt-5.6-terra-example",
+      "provider": "codex",
+      "model": "gpt-5.6-terra",
+      "transport": "direct",
+      "minimumRuntimeVersion": "0.144.1",
+      "supportedEfforts": ["low", "medium", "high", "xhigh", "max"],
+      "supportedSpeeds": ["standard", "fast"]
+    },
+    {
+      "id": "codex-direct-gpt-5.6-luna-example",
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "transport": "direct",
+      "minimumRuntimeVersion": "0.144.1",
+      "supportedEfforts": ["low", "medium", "high", "xhigh", "max"],
+      "supportedSpeeds": ["standard", "fast"]
+    },
+    {
+      "id": "claude-direct-claude-opus-5-example",
+      "provider": "claude",
+      "model": "claude-opus-5",
+      "transport": "direct",
+      "minimumRuntimeVersion": "2.1.226",
+      "supportedEfforts": ["low", "medium", "high", "xhigh", "max"],
+      "supportedSpeeds": ["standard", "fast"]
+    },
+    {
+      "id": "claude-direct-claude-opus-4-6-example",
+      "provider": "claude",
+      "model": "claude-opus-4-6",
+      "transport": "direct",
+      "minimumRuntimeVersion": "2.1.207",
+      "supportedEfforts": ["low", "medium", "high", "xhigh"]
+    }
+  ],
+  "communication": {
+    "codex": {
+      "rollout": "off",
+      "sameHostOnly": true,
+      "claimLeaseSeconds": 60,
+      "bindingTtlSeconds": 300
+    },
+    "claude": {
+      "rollout": "off",
+      "sameHostOnly": true,
+      "claimLeaseSeconds": 60,
+      "bindingTtlSeconds": 300
+    }
+  },
+  "resourceGuard": {
+    "maxInFlight": 4,
+    "maxLaunchesPerTick": 1
+  },
+  "logging": {
+    "maxSizeBytes": 52428800,
+    "maxGenerations": 10
+  },
+  "direct": {
+    "stall": {
+      "codex": {
+        "outputStallSeconds": 900,
+        "maxRuntimeSeconds": 7200
+      },
+      "claude": {
+        "outputStallSeconds": 2700,
+        "maxRuntimeSeconds": 10800
+      }
+    }
+  },
+  "defaultProfile": "implement"
+}

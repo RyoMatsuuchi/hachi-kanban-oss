@@ -1,0 +1,76 @@
+{
+  "recoveredHostFinalize": [
+    {
+      "eventType": "handoff_rejected",
+      "payload": { "sessionId": "worker-old", "reason": "placeholder_summary" }
+    },
+    {
+      "eventType": "block_reason_updated",
+      "payload": { "reason": "needs-manual: handoff summary がプレースホルダ" }
+    },
+    {
+      "eventType": "handoff_evidence_failed",
+      "payload": { "sessionId": "worker-new", "failures": [{ "kind": "working-tree" }] }
+    },
+    {
+      "eventType": "status_changed",
+      "payload": { "from": "blocked", "to": "done" }
+    }
+  ],
+  "recoveredReviewGate": [
+    {
+      "eventType": "verdict_missing",
+      "payload": { "sessionId": "review-old", "reason": "model_output_missing" }
+    },
+    {
+      "eventType": "finalized",
+      "payload": { "from": "blocked", "to": "review", "outcome": "review", "sessionId": "worker-2" }
+    },
+    {
+      "eventType": "verdict_finalized",
+      "payload": {
+        "from": "review",
+        "to": "done",
+        "verdict": "pass",
+        "confidence": "high",
+        "sessionId": "review-new"
+      }
+    }
+  ],
+  "impossibleTransition": [
+    {
+      "eventType": "status_changed",
+      "payload": { "from": "ready", "to": "done" },
+      "provenance": {
+        "kind": "orchestrator",
+        "actorId": "o_fixture",
+        "actorSessionId": "os_fixture",
+        "actorGeneration": 4
+      }
+    }
+  ],
+  "evidenceMissing": [
+    {
+      "eventType": "handoff_evidence_failed",
+      "payload": { "sessionId": "worker-only", "failures": [{ "kind": "commit" }] }
+    },
+    {
+      "eventType": "status_changed",
+      "payload": { "to": "done" }
+    }
+  ],
+  "staleFenceOnly": [
+    {
+      "eventType": "stale_finalize_skipped",
+      "payload": { "sessionId": "worker-stale", "phase": "handoff_success" }
+    },
+    {
+      "eventType": "stale_review_skipped",
+      "payload": { "sessionId": "review-stale", "phase": "verdict_finalized" }
+    },
+    {
+      "eventType": "stale_max_runtime_skip",
+      "payload": { "taskId": "t_fixture00000001", "sessionId": "worker-max-runtime-stale" }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "hachi-kanban",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "prepare": "husky",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm --workspace-concurrency=1 -r test && node --test scripts/*.test.mjs",
+    "test:run": "pnpm --workspace-concurrency=1 -r test && node --test scripts/*.test.mjs",
+    "test:coverage": "pnpm -r run test -- --coverage",
+    "lint": "eslint packages/*/src",
+    "setup:local": "node scripts/setup-local.mjs",
+    "launchd:render": "node scripts/render-launchd.mjs",
+    "hachi": "pnpm --filter @hachi/cli run hachi --",
+    "supervisor": "pnpm --filter @hachi/supervisor run start --",
+    "web": "pnpm --filter @hachi/web run start --"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^10.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1",
+    "vitest": "^4.1.9"
+  }
+}

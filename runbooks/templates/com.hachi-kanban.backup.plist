@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<!--
+  hachi-kanban backup LaunchAgent テンプレート（docs/contract.md §19）。
+
+  `hachi admin backup`（既定 keep=14）を毎日 04:00 に 1 回だけ実行する
+  cron 的ジョブ。supervisor.plist と異なり常駐プロセスではないため
+  KeepAlive / RunAtLoad は付けない（StartCalendarInterval のみ）。
+
+  重要な既知の制約: StartCalendarInterval は launchd の non-demand
+  （受動的）トリガーであり、`gui/<uid>` ドメインが「on-demand-only mode」
+  に入っている間は自然発火しない可能性がある
+  （詳細は runbooks/supervisor-launchd-setup.md の
+  「既知の制約: on-demand-only mode」参照。supervisor と同一マシン・
+  同一ドメインの制約のため本ジョブにも適用される）。自然発火しなかった
+  場合は `pnpm hachi admin backup` を手動実行するか、
+  `launchctl kickstart -k "gui/$(id -u)/com.hachi-kanban.backup"` で
+  即時起動すること。
+
+  インストール先:
+    ~/Library/LaunchAgents/com.hachi-kanban.backup.plist
+
+  再読み込み:
+    launchctl bootout "gui/$(id -u)/com.hachi-kanban.backup" 2>/dev/null || true
+    launchctl enable "gui/$(id -u)/com.hachi-kanban.backup"
+    launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.hachi-kanban.backup.plist
+
+  注意:
+    - このファイルは scripts/render-launchd.mjs で絶対パスを埋めてから使う。
+      テンプレートそのものを LaunchAgents へコピーしない。
+    - KeepAlive・RunAtLoad は指定しない。1日1回 04:00 起動のみで、
+      実行後プロセスは終了する（次回は次の StartCalendarInterval まで
+      待機）。
+    - ProgramArguments は supervisor.plist と同じ流儀で renderer が解決した
+      pnpm の絶対パスを直接指定し、root package.json の "hachi" スク
+      リプト経由（`pnpm --filter @hachi/cli run hachi --`）で
+      `admin backup` を呼び出す。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hachi-kanban.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{HACHI_PNPM_BIN}}</string>
+        <string>--filter</string>
+        <string>@hachi/cli</string>
+        <string>run</string>
+        <string>hachi</string>
+        <string>--</string>
+        <string>admin</string>
+        <string>backup</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/backup.launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/backup.launchd.err</string>
+
+    <key>WorkingDirectory</key>
+    <string>{{HACHI_REPO_ROOT}}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{HACHI_LAUNCHD_PATH}}</string>
+        <key>HACHI_KANBAN_HOME</key>
+        <string>{{HACHI_KANBAN_HOME}}</string>
+        <key>HACHI_KANBAN_BOARD</key>
+        <string>{{HACHI_KANBAN_BOARD}}</string>
+        <key>LC_ALL</key>
+        <string>en_US.UTF-8</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+</dict>
+</plist>

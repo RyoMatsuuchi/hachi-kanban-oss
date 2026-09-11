@@ -1,0 +1,27 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+__pycache__/
+
+# ローカル秘匿情報（bridge token 等）と repo 内 SQLite 実験ファイルの誤コミット防止（docs/contract.md §12.6-7）
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+
+# Claude Code ローカル設定（プロジェクト設定は各開発者固有）
+.claude/
+
+# worker が確認用に残すスクショ（正本は $HACHI_KANBAN_HOME/artifacts。オーケストレーターが attach 後に削除）
+/ui-*.png
+
+# 作業証跡ディレクトリ（worker/reviewer が残す run ログ・diff・スクショ等）。
+# 数千ファイル規模の運用データが入るため、誤コミットを防ぐ。
+.evidence/
+
+# pnpm のローカルストア（依存パッケージの実体キャッシュ）
+.pnpm-store/

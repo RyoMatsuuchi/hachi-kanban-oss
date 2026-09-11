@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# pre-commit: 型チェック + staged ファイルへの eslint --fix
+# HUSKY=0 で skip 可能（緊急時の逃げ道。常用しない）
+[ "$HUSKY" = "0" ] && exit 0
+set -e
+
+pnpm -r typecheck
+
+if [ -x "node_modules/.bin/lint-staged" ]; then
+  pnpm exec lint-staged
+else
+  echo "warning: lint-staged が見つからないため、lint-staged のみ skip します" >&2
+fi

@@ -1,0 +1,369 @@
+#!/usr/bin/env python3
+"""board の handover 解決と provider gate に委譲する薄い HHN シム。"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import select
+import shlex
+import shutil
+import subprocess
+import sys
+from typing import Any, Callable, Mapping, Sequence, TextIO
+
+
+INPUT_TIMEOUT_SECONDS = 30.0
+RESOLUTION_EXIT_CODE = 2
+CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+SelectFunction = Callable[[Sequence[TextIO], Sequence[TextIO], Sequence[TextIO], float], tuple[list[TextIO], list[TextIO], list[TextIO]]]
+
+
+class CliOutputError(RuntimeError):
+    """hachi の JSON 応答を解釈できなかったときのエラー。"""
+
+    def __init__(self, message: str, exit_code: int = 1) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code if exit_code != 0 else 1
+
+
+def hachi_path() -> str:
+    """host の hachi シムを優先し、checkout 内の CLI を fallback にする。"""
+    configured = os.environ.get("HACHI_KANBAN_BIN")
+    if configured:
+        return configured
+    installed = shutil.which("hachi")
+    if installed:
+        return installed
+    return str(Path(__file__).resolve().parent.parent / "bin" / "hachi")
+
+
+def run_cli(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    """CLI を argv のまま起動する。shell は経由しない。"""
+    return subprocess.run(
+        [hachi_path(), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def parse_json_output(result: subprocess.CompletedProcess[str]) -> Mapping[str, Any]:
+    """終了コードに関係なく JSON を先に取り出す。候補解決は CLI が非0で返すため。"""
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        message = result.stderr.strip() or result.stdout.strip() or str(error)
+        raise CliOutputError(message, result.returncode) from error
+    if not isinstance(payload, dict):
+        raise CliOutputError("hachi の JSON 応答が object ではありません", result.returncode)
+    return payload
+
+
+def invoke_json(runner: CommandRunner, args: Sequence[str]) -> tuple[subprocess.CompletedProcess[str], Mapping[str, Any]]:
+    """CLI 呼び出しと JSON 解釈をまとめる。"""
+    result = runner(args)
+    return result, parse_json_output(result)
+
+
+def resolution_from_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """前提契約の resolution 形状を検証して返す。"""
+    resolution = payload.get("resolution")
+    if not isinstance(resolution, dict):
+        raise CliOutputError("hachi の JSON に resolution object がありません")
+    status = resolution.get("status")
+    if status not in {"resolved", "ambiguous", "none"}:
+        raise CliOutputError(f"未知の handover resolution status です: {status!r}")
+    candidates = resolution.get("candidates")
+    if not isinstance(candidates, list):
+        raise CliOutputError("handover resolution の candidates が配列ではありません")
+    for candidate in candidates:
+        if not isinstance(candidate, dict) or not isinstance(candidate.get("command"), str):
+            raise CliOutputError("handover resolution candidate の command が不正です")
+    return resolution
+
+
+def candidate_commands(resolution: Mapping[str, Any]) -> list[str]:
+    """候補 command を CLI の返却順のまま取り出す。"""
+    return [candidate["command"] for candidate in resolution["candidates"]]
+
+
+def print_candidate_commands(commands: Sequence[str], output: TextIO) -> None:
+    """候補 command だけを全文そのまま出力する。"""
+    for command in commands:
+        print(command, file=output)
+
+
+def candidate_description(candidate: Mapping[str, Any]) -> str:
+    """TTY 選択画面向けの短い候補説明を作る。"""
+    parts = [
+        f"orchestrator={candidate.get('orchestratorId', '(不明)')}",
+        f"label={candidate.get('label', '(不明)')}",
+        f"project={candidate.get('project', '(不明)')}",
+        f"session={candidate.get('sessionId', '(不明)')}",
+        f"generation={candidate.get('generation', '(不明)')}",
+    ]
+    mission = candidate.get("missionTaskId")
+    if mission is not None:
+        parts.append(f"mission={mission}")
+    return " ".join(parts)
+
+
+def select_candidate(
+    resolution: Mapping[str, Any],
+    input_stream: TextIO,
+    output: TextIO,
+    error: TextIO,
+    *,
+    select_fn: SelectFunction = select.select,
+    timeout_seconds: float = INPUT_TIMEOUT_SECONDS,
+) -> Mapping[str, Any] | None:
+    """TTY で候補を一度だけ選ぶ。不正入力は再試行せず None に倒す。"""
+    candidates = resolution["candidates"]
+    for index, candidate in enumerate(candidates, start=1):
+        print(f"{index}. {candidate_description(candidate)}", file=output)
+        print(f"   {candidate['command']}", file=output)
+    print(f"番号を入力してください（{timeout_seconds:g}秒でタイムアウト）: ", end="", file=output, flush=True)
+
+    try:
+        readable, _, _ = select_fn([input_stream], [], [], timeout_seconds)
+    except (KeyboardInterrupt, OSError, ValueError):
+        print(file=output)
+        print("入力を受け付けられませんでした。候補を再表示します。", file=error)
+        return None
+    if not readable:
+        print(file=output)
+        print("入力がタイムアウトしました。候補を再表示します。", file=error)
+        return None
+
+    try:
+        line = input_stream.readline()
+    except KeyboardInterrupt:
+        print(file=output)
+        print("入力をキャンセルしました。候補を再表示します。", file=error)
+        return None
+    if line == "":
+        print(file=output)
+        print("入力が EOF になりました。候補を再表示します。", file=error)
+        return None
+
+    try:
+        selected_index = int(line.strip(), 10)
+    except ValueError:
+        selected_index = 0
+    if not 1 <= selected_index <= len(candidates):
+        print(file=output)
+        print("不正な選択です。候補を再表示します。", file=error)
+        return None
+    return candidates[selected_index - 1]
+
+
+def candidate_cli_args(command: str) -> list[str]:
+    """CLI が生成した POSIX quoting 済み command を安全に argv へ戻す。"""
+    try:
+        argv = shlex.split(command, posix=True)
+    except ValueError as error:
+        raise CliOutputError(f"候補 command の quoting を解釈できません: {error}") from error
+    if not argv or argv[0] != "hachi":
+        raise CliOutputError("候補 command が hachi から始まっていません")
+    if len(argv) < 3 or argv[1:3] != ["orchestrator", "handover"]:
+        raise CliOutputError("候補 command が orchestrator handover ではありません")
+    return argv[1:]
+
+
+def write_cli_failure(result: subprocess.CompletedProcess[str], error: TextIO) -> int:
+    """JSON 以外の CLI 失敗を stderr へ渡す。"""
+    message = result.stderr.strip() or result.stdout.strip() or "hachi の実行に失敗しました"
+    print(message, file=error)
+    return result.returncode if result.returncode != 0 else 1
+
+
+def provider_launchable_failure(payload: Mapping[str, Any]) -> str | None:
+    """Claude tmux で起動できない provider preflight の理由を取り出す。"""
+    preflight = payload.get("preflight")
+    if not isinstance(preflight, list):
+        return None
+    for check in preflight:
+        if not isinstance(check, dict) or check.get("name") != "provider-launchable":
+            continue
+        if check.get("ok") is True:
+            return None
+        reason = check.get("reason")
+        return reason if isinstance(reason, str) and reason else "provider-launchable preflight に失敗しました"
+    return None
+
+
+def write_provider_launch_guidance(reason: str, error: TextIO) -> int:
+    """Codex を Claude tmux へ暗黙変換せず、provider 別の手動経路へ案内する。"""
+    print("provider の起動経路が一致しないため HHN は実行しません。", file=error)
+    print(f"理由: {reason}", file=error)
+    print(
+        "Codex Desktop は runbooks/orchestrator-reference.md §0.7.5 の "
+        "handoff-prepare → create_thread → handoff-accept 手順を使ってください。",
+        file=error,
+    )
+    return RESOLUTION_EXIT_CODE
+
+
+def warn_if_current_session(runner: CommandRunner, error: TextIO) -> None:
+    """旧 Claude session 自身からの実行だけ警告する。環境変数なしでは board を読まない。"""
+    provider_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not provider_session_id:
+        return
+    try:
+        result, payload = invoke_json(runner, ["orchestrator", "list", "--json"])
+    except (CliOutputError, OSError):
+        return
+    if result.returncode != 0:
+        return
+    rows = payload.get("orchestrators")
+    if not isinstance(rows, list):
+        return
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        live_session = row.get("liveSession")
+        if not isinstance(live_session, dict):
+            continue
+        if (
+            live_session.get("provider") == "claude"
+            and live_session.get("providerSessionId") == provider_session_id
+        ):
+            print(
+                "⚠ いま引き継ごうとしている当のセッションの中から叩いています。\n"
+                "\n"
+                "  旧セッションへ打つと、冷えた文脈が cache write 単価（read の12.5〜20倍）で\n"
+                "  丸ごと書き直されます。次からは別ペイン（素の端末）から HHN を叩いてください。\n"
+                "\n"
+                "  続行します（ここで止めても支払いは戻らないため）。",
+                file=error,
+            )
+            return
+
+
+def finish_resolved(
+    result: subprocess.CompletedProcess[str],
+    payload: Mapping[str, Any],
+    apply: bool,
+    output: TextIO,
+    error: TextIO,
+) -> int:
+    """resolved の dry-run/apply 結果を表示する。"""
+    provider_failure = provider_launchable_failure(payload)
+    if provider_failure is not None:
+        return write_provider_launch_guidance(provider_failure, error)
+    if result.returncode != 0:
+        return write_cli_failure(result, error)
+    if payload.get("blocked"):
+        reasons = payload.get("blockReasons", [])
+        print("事前検査で止まりました:", file=error)
+        print(json.dumps(reasons, ensure_ascii=False, indent=2), file=error)
+        return RESOLUTION_EXIT_CODE
+
+    if not apply:
+        print("dry-run: 事前検査を通過しました。実行するには --apply を付けてください。", file=output)
+        print(f"  後継 session id (予定): {payload.get('successorSessionId')}", file=output)
+        return 0
+
+    session_name = payload.get("tmuxSessionName")
+    if not isinstance(session_name, str) or not session_name:
+        print("hachi の apply 成功結果に tmuxSessionName がありません。", file=error)
+        return 1
+    print(f"後継を起動しました: tmux セッション {session_name}", file=output)
+    print(file=output)
+    verb = "switch-client" if os.environ.get("TMUX") else "attach"
+    print("接続するには:", file=output)
+    print(f"  tmux {verb} -t {session_name}", file=output)
+    if verb == "switch-client":
+        print("  （いま tmux の中に居るので switch-client。attach を入れ子にしない）", file=output)
+    return 0
+
+
+def build_handover_args(parsed: argparse.Namespace) -> list[str]:
+    """入力された絞り込みを CLI へ素通しする。"""
+    args = ["orchestrator", "handover"]
+    if parsed.orchestrator is not None:
+        args.extend(["--orchestrator", parsed.orchestrator])
+    if parsed.mission is not None:
+        args.extend(["--mission", parsed.mission])
+    if parsed.apply:
+        args.append("--apply")
+    args.append("--json")
+    return args
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """HHN の引数を解釈する。既定は apply。"""
+    parser = argparse.ArgumentParser(description="旧セッションを起こさずに世代交代する")
+    parser.set_defaults(apply=True)
+    parser.add_argument("--apply", dest="apply", action="store_true", help="実際に後継を起動する（既定）")
+    parser.add_argument("-n", "--dry-run", dest="apply", action="store_false", help="後継を起動せず事前検査だけ行う")
+    parser.add_argument("--no-input", action="store_true", help="TTY でも候補選択を行わない")
+    parser.add_argument("--orchestrator", help="候補を orchestrator identity で絞り込む")
+    parser.add_argument("--mission", help="ミッション task ID を handover CLI へ素通しする")
+    return parser.parse_args(argv)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    runner: CommandRunner = run_cli,
+    input_stream: TextIO = sys.stdin,
+    output: TextIO = sys.stdout,
+    error: TextIO = sys.stderr,
+    select_fn: SelectFunction = select.select,
+) -> int:
+    """エントリポイント。"""
+    parsed = parse_args(argv)
+    try:
+        warn_if_current_session(runner, error)
+        result, payload = invoke_json(runner, build_handover_args(parsed))
+        resolution = resolution_from_payload(payload)
+        status = resolution["status"]
+
+        if status == "resolved":
+            return finish_resolved(result, payload, parsed.apply, output, error)
+
+        commands = candidate_commands(resolution)
+        if status == "ambiguous":
+            interactive = (
+                not parsed.no_input
+                and output.isatty()
+                and input_stream.isatty()
+                and len(resolution["candidates"]) > 1
+            )
+            if interactive:
+                selected = select_candidate(
+                    resolution,
+                    input_stream,
+                    output,
+                    error,
+                    select_fn=select_fn,
+                )
+                if selected is not None:
+                    selected_args = candidate_cli_args(selected["command"])
+                    # CLI の候補 command はコピペ表示用で --json を含まないため、結果解釈用だけ足す。
+                    if "--json" not in selected_args:
+                        selected_args.append("--json")
+                    selected_result, selected_payload = invoke_json(runner, selected_args)
+                    selected_resolution = resolution_from_payload(selected_payload)
+                    if selected_resolution["status"] == "resolved":
+                        return finish_resolved(selected_result, selected_payload, parsed.apply, output, error)
+                    print("選択した候補でも handover を一意に解決できませんでした。", file=error)
+            print_candidate_commands(commands, output)
+            return RESOLUTION_EXIT_CODE
+
+        if commands:
+            print_candidate_commands(commands, output)
+        else:
+            print(resolution.get("reason", "handover 対象を解決できませんでした"), file=error)
+        return RESOLUTION_EXIT_CODE
+    except (CliOutputError, OSError) as caught:
+        print(str(caught), file=error)
+        return caught.exit_code if isinstance(caught, CliOutputError) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

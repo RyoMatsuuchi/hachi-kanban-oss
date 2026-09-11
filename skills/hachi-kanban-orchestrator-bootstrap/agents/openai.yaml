@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hachi Orchestrator Bootstrap"
+  short_description: "自然言語から担当範囲付きオーケストレーターを安全に立ち上げる"
+  default_prompt: "$hachi-kanban-orchestrator-bootstrap 新しいオーケストレーターを立ち上げて"

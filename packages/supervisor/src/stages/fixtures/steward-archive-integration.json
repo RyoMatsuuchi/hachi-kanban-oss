@@ -1,0 +1,216 @@
+{
+  "rows": [
+    {
+      "row": 1,
+      "name": "no-cwd",
+      "observation": { "cwd": { "kind": "no-cwd" }, "drift": false },
+      "verdict": "veto",
+      "integrationEvidence": "unobservable:no-cwd"
+    },
+    {
+      "row": 2,
+      "name": "cwd-not-a-worktree",
+      "observation": { "cwd": { "kind": "not-a-worktree" }, "drift": false },
+      "verdict": "veto",
+      "integrationEvidence": "unobservable:cwd-not-a-worktree"
+    },
+    {
+      "row": 3,
+      "name": "repo-root-clean",
+      "observation": { "cwd": { "kind": "repo-root", "dirty": false }, "drift": false },
+      "verdict": "allow",
+      "integrationEvidence": "not-observable:repo-root"
+    },
+    {
+      "row": 4,
+      "name": "repo-root-dirty",
+      "observation": { "cwd": { "kind": "repo-root", "dirty": true }, "drift": false },
+      "verdict": "allow",
+      "integrationEvidence": "not-observable:repo-root-dirty"
+    },
+    {
+      "row": 5,
+      "name": "worktree-missing-under-canonical-root",
+      "observation": {
+        "cwd": { "kind": "worktree-missing", "underCanonicalRoot": true },
+        "drift": false
+      },
+      "verdict": "allow",
+      "integrationEvidence": "not-observable:worktree-missing"
+    },
+    {
+      "row": 6,
+      "name": "worktree-missing-outside-canonical-root",
+      "observation": {
+        "cwd": { "kind": "worktree-missing", "underCanonicalRoot": false },
+        "drift": false
+      },
+      "verdict": "veto",
+      "integrationEvidence": "unobservable:cwd-not-a-worktree"
+    },
+    {
+      "row": 7,
+      "name": "no-integration-ref",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": { "state": "unresolved" },
+        "drift": false
+      },
+      "verdict": "veto",
+      "integrationEvidence": "unobservable:no-integration-ref"
+    },
+    {
+      "row": 8,
+      "name": "probe-failed",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "integrationProof": { "kind": "probe-failed" },
+        "drift": false
+      },
+      "verdict": "veto",
+      "integrationEvidence": "unobservable:probe-failed"
+    },
+    {
+      "row": 9,
+      "name": "worktree-dirty",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "integrationProof": { "kind": "dirty" },
+        "drift": false
+      },
+      "verdict": "veto",
+      "integrationEvidence": "unintegrated:worktree-dirty"
+    },
+    {
+      "row": 10,
+      "name": "clean-head-reachable",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "integrationProof": { "kind": "clean", "proof": "ancestor" },
+        "drift": false
+      },
+      "verdict": "allow",
+      "integrationEvidence": "clean-head-reachable"
+    },
+    {
+      "row": 11,
+      "name": "clean-patch-equivalent",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "integrationProof": { "kind": "clean", "proof": "patch-equivalent" },
+        "drift": false
+      },
+      "verdict": "allow",
+      "integrationEvidence": "clean-patch-equivalent"
+    },
+    {
+      "row": 12,
+      "name": "branch-commits-not-in-main",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "integrationProof": { "kind": "clean", "proof": "none" },
+        "drift": false
+      },
+      "verdict": "veto",
+      "integrationEvidence": "unintegrated:branch-commits-not-in-main"
+    },
+    {
+      "row": 13,
+      "name": "observation-drift",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "integrationProof": { "kind": "clean", "proof": "ancestor" },
+        "drift": true
+      },
+      "verdict": "veto",
+      "integrationEvidence": "unobservable:observation-drift"
+    }
+  ],
+  "driftVariants": [
+    {
+      "name": "drift-overrides-clean-ancestor",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "integrationProof": { "kind": "clean", "proof": "ancestor" },
+        "drift": true
+      }
+    },
+    {
+      "name": "drift-overrides-clean-patch-equivalent",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "integrationProof": { "kind": "clean", "proof": "patch-equivalent" },
+        "drift": true
+      }
+    },
+    {
+      "name": "drift-overrides-dirty",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": {
+          "state": "resolved",
+          "ref": "refs/remotes/origin/main",
+          "oid": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        "integrationProof": { "kind": "dirty" },
+        "drift": true
+      }
+    },
+    {
+      "name": "drift-overrides-no-integration-ref",
+      "observation": {
+        "cwd": { "kind": "worktree-present" },
+        "integrationTarget": { "state": "unresolved" },
+        "drift": true
+      }
+    },
+    {
+      "name": "drift-overrides-no-cwd",
+      "observation": { "cwd": { "kind": "no-cwd" }, "drift": true }
+    },
+    {
+      "name": "drift-overrides-repo-root",
+      "observation": { "cwd": { "kind": "repo-root", "dirty": false }, "drift": true }
+    }
+  ]
+}

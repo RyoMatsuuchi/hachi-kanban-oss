@@ -1,0 +1,71 @@
+(node:6779) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Scope: 2 of 7 workspace projects
+[36mpackages/supervisor[39m [96mtest[39m$ vitest run src/argv.test.ts
+[35mpackages/cli[39m [96mtest[39m$ vitest run src/argv.test.ts
+[36mpackages/supervisor[39m [96mtest[39m: [90m(node:6817) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m(Use `node --trace-warnings ...` to show where the warning was created)[39m
+[35mpackages/cli[39m [96mtest[39m: [90m(node:6799) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[39m
+[35mpackages/cli[39m [96mtest[39m: [90m(Use `node --trace-warnings ...` to show where the warning was created)[39m
+[35mpackages/cli[39m [96mtest[39m:  RUN  v4.1.9 /Users/dev/.hachi-kanban/worktrees/hk-verify-classification/packages/cli
+[36mpackages/supervisor[39m [96mtest[39m:  RUN  v4.1.9 /Users/dev/.hachi-kanban/worktrees/hk-verify-classification/packages/supervisor
+[36mpackages/supervisor[39m [96mtest[39m: [90m(node:6845) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m(Use `node --trace-warnings ...` to show where the warning was created)[39m
+[35mpackages/cli[39m [96mtest[39m: [90m(node:6844) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.[39m
+[35mpackages/cli[39m [96mtest[39m: [90m(Use `node --trace-warnings ...` to show where the warning was created)[39m
+[35mpackages/cli[39m [96mtest[39m:  ❯ src/argv.test.ts (14 tests | 1 failed) 5ms
+[35mpackages/cli[39m [96mtest[39m:      × fails in both packages for raw fixture capture 2ms
+[36mpackages/supervisor[39m [96mtest[39m:  ❯ src/argv.test.ts (23 tests | 1 failed) 5ms
+[36mpackages/supervisor[39m [96mtest[39m:      × fails in both packages for raw fixture capture 2ms
+[35mpackages/cli[39m [96mtest[39m: [90m⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯[39m
+[35mpackages/cli[39m [96mtest[39m: [90m FAIL  src/argv.test.ts > TEMP_RAW_PNPM_COLLISION_FIXTURE > fails in both packages for raw fixture capture[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯[39m
+[35mpackages/cli[39m [96mtest[39m: [90mAssertionError: expected true to be false // Object.is equality[39m
+[35mpackages/cli[39m [96mtest[39m: [90m- Expected[39m
+[35mpackages/cli[39m [96mtest[39m: [90m+ Received[39m
+[35mpackages/cli[39m [96mtest[39m: [90m- false[39m
+[35mpackages/cli[39m [96mtest[39m: [90m+ true[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m FAIL  src/argv.test.ts > TEMP_RAW_PNPM_COLLISION_FIXTURE > fails in both packages for raw fixture capture[39m
+[35mpackages/cli[39m [96mtest[39m: [90m ❯ src/argv.test.ts:83:18[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90mAssertionError: expected true to be false // Object.is equality[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m- Expected[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m+ Received[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m- false[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m+ true[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m ❯ src/argv.test.ts:110:18[39m
+[35mpackages/cli[39m [96mtest[39m: [90m     81| describe("TEMP_RAW_PNPM_COLLISION_FIXTURE", () => {[39m
+[35mpackages/cli[39m [96mtest[39m: [90m     82|   it("fails in both packages for raw fixture capture", () => {[39m
+[35mpackages/cli[39m [96mtest[39m: [90m     83|     expect(true).toBe(false);[39m
+[35mpackages/cli[39m [96mtest[39m: [90m       |                  ^[39m
+[35mpackages/cli[39m [96mtest[39m: [90m     84|   });[39m
+[35mpackages/cli[39m [96mtest[39m: [90m     85| });[39m
+[35mpackages/cli[39m [96mtest[39m: [90m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[39m
+[35mpackages/cli[39m [96mtest[39m:  Test Files  1 failed (1)
+[35mpackages/cli[39m [96mtest[39m:       Tests  1 failed | 13 passed (14)
+[35mpackages/cli[39m [96mtest[39m:    Start at  10:30:28
+[35mpackages/cli[39m [96mtest[39m:    Duration  150ms (transform 29ms, setup 0ms, import 51ms, tests 5ms, environment 0ms)
+[36mpackages/supervisor[39m [96mtest[39m: [90m    108| describe("TEMP_RAW_PNPM_COLLISION_FIXTURE", () => {[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m    109|   it("fails in both packages for raw fixture capture", () => {[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m    110|     expect(true).toBe(false);[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m       |                  ^[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m    111|   });[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m    112| });[39m
+[36mpackages/supervisor[39m [96mtest[39m: [90m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[39m
+[36mpackages/supervisor[39m [96mtest[39m:  Test Files  1 failed (1)
+[36mpackages/supervisor[39m [96mtest[39m:       Tests  1 failed | 22 passed (23)
+[36mpackages/supervisor[39m [96mtest[39m:    Start at  10:30:28
+[36mpackages/supervisor[39m [96mtest[39m:    Duration  150ms (transform 29ms, setup 0ms, import 52ms, tests 5ms, environment 0ms)
+[35mpackages/cli[39m [96mtest[39m: Failed
+[36mpackages/supervisor[39m [96mtest[39m: Failed
+[41m[30m ERR_PNPM_RECURSIVE_FAIL [39m[49m 
+
+
+Summary: [31m2 fails[39m, 0 passes
+
+/Users/dev/.hachi-kanban/worktrees/hk-verify-classification/packages/cli:
+[41m[30m ERROR [39m[49m [31m@hachi/cli@0.1.0 test: `vitest run src/argv.test.ts`[39m
+[31mExit status 1[39m
+
+/Users/dev/.hachi-kanban/worktrees/hk-verify-classification/packages/supervisor:
+[41m[30m ERROR [39m[49m [31m@hachi/supervisor@0.1.0 test: `vitest run src/argv.test.ts`[39m
+[31mExit status 1[39m

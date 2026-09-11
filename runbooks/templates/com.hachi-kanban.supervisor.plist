@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<!--
+  hachi-kanban supervisor LaunchAgent テンプレート。
+
+  実機 e2e で StartInterval=60 が自然発火しない不具合が確定した
+  （`launchctl print` が `pended nondemand spawn = interval` のまま進まず、
+  ProcessType=Background によるタイマー抑制が有力）。そのため常駐方式を
+  KeepAlive + supervisor 内部の逐次ループ（`--interval 30 --apply`、
+  `--once` は付けない）に変更した。supervisor は setTimeout ベースの
+  async ループで tick の重なりを防止し、SIGTERM で進行中 tick を完了させ
+  てから graceful に終了する（packages/supervisor/src/supervisor.ts の
+  startLoop / stop、docs/contract.md §12.9-2 参照）。launchd 側は
+  KeepAlive=true でこのプロセスが落ちたら自動再起動するだけでよい。
+
+  kill-switch は $HACHI_KANBAN_HOME（既定 ~/.hachi-kanban）配下の
+  supervisor.disabled / <stage>.disabled ファイル。存在すれば該当ステージを
+  skip する（packages/supervisor/src/supervisor.ts の isDisabled 参照）。
+  プロセス再起動なしで次 tick から即座に反映される。
+
+  インストール先:
+    ~/Library/LaunchAgents/com.hachi-kanban.supervisor.plist
+
+  再読み込み:
+    launchctl bootout "gui/$(id -u)/com.hachi-kanban.supervisor" 2>/dev/null || true
+    launchctl enable "gui/$(id -u)/com.hachi-kanban.supervisor"
+    launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.hachi-kanban.supervisor.plist
+
+  注意:
+    - このファイルは scripts/render-launchd.mjs で絶対パスを埋めてから使う。
+      テンプレートそのものを LaunchAgents へコピーしない。
+    - RunAtLoad=true + KeepAlive=true。bootstrap 直後から常駐プロセスとして
+      起動し、以後は落ちても launchd が再起動する。
+    - ProcessType は指定しない（既定 Interactive/Standard 相当）。
+      Background 指定はタイマー抑制の疑いがあるため外した。
+    - ProgramArguments は renderer が解決した pnpm の絶対パスを直接指定する。
+      pnpm.cjs は `#!/usr/bin/env node` shebang で起動するため、launchd の
+      最小 PATH（EnvironmentVariables 側）から node を解決できることを
+      `env -i PATH=... pnpm ...` で実機確認済み。
+      /bin/zsh -lc ラッパーは不要（.zshrc 依存を避けられるぶんこちらの方が
+      launchd 環境で堅牢）。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hachi-kanban.supervisor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{HACHI_PNPM_BIN}}</string>
+        <string>--filter</string>
+        <string>@hachi/supervisor</string>
+        <string>run</string>
+        <string>start</string>
+        <string>--</string>
+        <string>--interval</string>
+        <string>30</string>
+        <string>--apply</string>
+    </array>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/supervisor.launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/supervisor.launchd.err</string>
+
+    <key>WorkingDirectory</key>
+    <string>{{HACHI_REPO_ROOT}}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{HACHI_LAUNCHD_PATH}}</string>
+        <key>HACHI_KANBAN_HOME</key>
+        <string>{{HACHI_KANBAN_HOME}}</string>
+        <key>HACHI_KANBAN_BOARD</key>
+        <string>{{HACHI_KANBAN_BOARD}}</string>
+        <key>HACHI_CODEX_BRIDGE_URL</key>
+        <string>{{HACHI_CODEX_BRIDGE_URL}}</string>
+        <key>HACHI_CODEX_BRIDGE_TOKEN_FILE</key>
+        <string>{{HACHI_CODEX_BRIDGE_TOKEN_FILE}}</string>
+        <key>HACHI_CLAUDE_BRIDGE_URL</key>
+        <string>{{HACHI_CLAUDE_BRIDGE_URL}}</string>
+        <key>HACHI_CLAUDE_BRIDGE_TOKEN_FILE</key>
+        <string>{{HACHI_CLAUDE_BRIDGE_TOKEN_FILE}}</string>
+        <key>HACHI_BRIDGE_ALLOW_REMOTE</key>
+        <string>{{HACHI_BRIDGE_ALLOW_REMOTE}}</string>
+        <key>LC_ALL</key>
+        <string>en_US.UTF-8</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+</dict>
+</plist>

@@ -1,0 +1,16 @@
+#!/bin/bash
+# hachi-kanban: このセッションでオーケストレーター消費監視フックを有効化する。
+# 使い方: hachi-orch-enable <claude-session-id>
+# 無効化: rm ~/.hachi-kanban/state/usage-hook/enabled/<claude-session-id>
+set -euo pipefail
+SID="${1:-}"
+if [ -z "$SID" ]; then
+  echo "使い方: hachi-orch-enable <claude-session-id>" >&2
+  echo "  session id は transcript のパス ~/.claude/projects/<proj>/<uuid>.jsonl から取れる" >&2
+  exit 2
+fi
+D="$HOME/.hachi-kanban/state/usage-hook/enabled"
+mkdir -p "$D"
+date +%s > "$D/$SID"
+echo "有効化しました: $SID"
+echo "  フックは次のユーザー入力から発火します（無効なセッションでは stat 1 回で抜けます）"

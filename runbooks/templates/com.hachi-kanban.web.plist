@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<!--
+  hachi-kanban web（看板ビュー、127.0.0.1:9131）の LaunchAgent テンプレート。
+
+  supervisor（com.hachi-kanban.supervisor.plist）と同じ常駐方式:
+  KeepAlive=true + RunAtLoad=true。プロセスが落ちたら launchd が自動再起動する。
+  従来は手動 `pnpm web` の常駐運用だったが、セッション終了や誤 kill の巻き添えで
+  落ちたまま気づけないことがあったため LaunchAgent 化した（2026-07-04）。
+
+  インストール先:
+    ~/Library/LaunchAgents/com.hachi-kanban.web.plist
+
+  再読み込み:
+    launchctl bootout "gui/$(id -u)/com.hachi-kanban.web" 2>/dev/null || true
+    launchctl enable "gui/$(id -u)/com.hachi-kanban.web"
+    launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.hachi-kanban.web.plist
+
+  注意:
+    - このファイルは scripts/render-launchd.mjs で絶対パスを埋めてから使う。
+      テンプレートそのものを LaunchAgents へコピーしない。
+    - port は既定 9131（env HACHI_KANBAN_WEB_PORT で変更可）。bind は 127.0.0.1 固定。
+    - 手動起動プロセスが既に 9131 を LISTEN していると EADDRINUSE でクラッシュループに
+      なるため、bootstrap 前に既存プロセスを止めること
+      （`lsof -nP -iTCP:9131 -sTCP:LISTEN -t | xargs kill`）。
+    - main checkout のソースを tsx で直読みするため、コード更新の反映は
+      `launchctl kickstart -k "gui/$(id -u)/com.hachi-kanban.web"`。クライアント側の
+      変更は先に web パッケージの build（vite build）で dist を再生成しておく。
+    - このマシンの GUI launchd ドメインは断続的に on-demand-only mode に入り、
+      KeepAlive の自動再起動と RunAtLoad が保留される（supervisor と同一の既知制約。
+      2026-07-04 に kill → 30秒待ちで再起動されないことを実測）。プロセスが
+      not running のときは上記 kickstart で復帰させる。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hachi-kanban.web</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{HACHI_PNPM_BIN}}</string>
+        <string>--filter</string>
+        <string>@hachi/web</string>
+        <string>run</string>
+        <string>start</string>
+    </array>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/web.launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/web.launchd.err</string>
+
+    <key>WorkingDirectory</key>
+    <string>{{HACHI_REPO_ROOT}}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{HACHI_LAUNCHD_PATH}}</string>
+        <key>HACHI_KANBAN_HOME</key>
+        <string>{{HACHI_KANBAN_HOME}}</string>
+        <key>HACHI_KANBAN_BOARD</key>
+        <string>{{HACHI_KANBAN_BOARD}}</string>
+        <key>HACHI_KANBAN_WEB_PORT</key>
+        <string>{{HACHI_KANBAN_WEB_PORT}}</string>
+        <key>LC_ALL</key>
+        <string>en_US.UTF-8</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+</dict>
+</plist>

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<!--
+  hachi-kanban supervisor watchdog（docs/contract.md §33.2）の LaunchAgent テンプレート。
+
+  supervisor 自身の heartbeat（$HACHI_KANBAN_HOME/state/supervisor-heartbeat.json）の鮮度を
+  60秒毎に検査し、陳腐化・欠如を検知したら com.hachi-kanban.supervisor を
+  `launchctl kickstart -k` で強制再起動する常駐プロセス（scripts/hachi-watchdog.sh）。
+  supervisor 自身の内部状態・DBには一切依存しない純shell（「配管を見張る配管」）。
+
+  supervisor / web と同じ理由（このマシンの gui/<uid> launchd ドメインが断続的に
+  on-demand-only mode に入り、KeepAlive/RunAtLoad の自動再起動が保留されうる既知制約。
+  runbooks/supervisor-launchd-setup.md「既知の制約: on-demand-only mode」参照）で、
+  KeepAlive=true + RunAtLoad=true + スクリプト内部の while ループ方式を採用し、
+  StartInterval には依存しない。
+
+  注意（多段監視の限界）:
+    watchdog 自身も KeepAlive/RunAtLoad という non-demand トリガーで起動されるため、
+    理論上は watchdog 自身が on-demand-only mode の影響で再起動が遅延する可能性が残る。
+    「誰が watchdog を見るか」という多段監視は過剰と判断し本タスクのスコープ外とする。
+    運用は `launchctl print "gui/$(id -u)/com.hachi-kanban.watchdog"` での定期的な
+    state/pid 確認に委ねる。
+
+  インストール先:
+    ~/Library/LaunchAgents/com.hachi-kanban.watchdog.plist
+
+  再読み込み:
+    launchctl bootout "gui/$(id -u)/com.hachi-kanban.watchdog" 2>/dev/null || true
+    launchctl enable "gui/$(id -u)/com.hachi-kanban.watchdog"
+    launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.hachi-kanban.watchdog.plist
+
+  注意:
+    - このファイルは scripts/render-launchd.mjs で絶対パスを埋めてから使う。
+      テンプレートそのものを LaunchAgents へコピーしない。
+    - HACHI_WATCHDOG_STALE_SEC（既定180秒）で鮮度閾値を上書き可能。
+    - kill-switch: $HACHI_KANBAN_HOME/watchdog.disabled が存在する間は検査を skip する
+      （ループは継続、プロセス再起動不要で次周期から反映）。
+    - scripts/hachi-watchdog.sh は実行権限（chmod +x）が必要。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hachi-kanban.watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{HACHI_REPO_ROOT}}/scripts/hachi-watchdog.sh</string>
+    </array>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/watchdog.launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{HACHI_KANBAN_HOME}}/logs/watchdog.launchd.err</string>
+
+    <key>WorkingDirectory</key>
+    <string>{{HACHI_REPO_ROOT}}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{HACHI_LAUNCHD_PATH}}</string>
+        <key>HACHI_KANBAN_HOME</key>
+        <string>{{HACHI_KANBAN_HOME}}</string>
+        <key>LC_ALL</key>
+        <string>en_US.UTF-8</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+</dict>
+</plist>

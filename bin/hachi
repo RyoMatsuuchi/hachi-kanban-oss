@@ -1,0 +1,77 @@
+#!/bin/sh
+set -e
+
+# symlink shim（例: ~/.local/bin/hachi）を最終targetまで解決してからrepo rootを得る。
+# readlink -fはmacOS標準に無いため、相対symlinkも扱うbounded loopにする。
+SCRIPT_PATH="$0"
+LINK_DEPTH=0
+while [ -L "$SCRIPT_PATH" ]; do
+  LINK_DEPTH=$((LINK_DEPTH + 1))
+  if [ "$LINK_DEPTH" -gt 40 ]; then
+    echo "hachi: symlinkの解決が上限を超えました: $0" >&2
+    exit 127
+  fi
+  SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+  LINK_TARGET="$(readlink "$SCRIPT_PATH")"
+  case "$LINK_TARGET" in
+    /*) SCRIPT_PATH="$LINK_TARGET" ;;
+    *) SCRIPT_PATH="$SCRIPT_DIR/$LINK_TARGET" ;;
+  esac
+done
+
+HK="$(cd -P "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+
+# package managerを経由せず、既知toolchainのNode.jsとinstall済みのCLI runtimeを直接使う。
+# これによりpackage-manager bannerや暗黙install/purgeがCLI stdoutへ混入しない。
+NODE_BIN=""
+if [ -n "${HACHI_NODE_BIN:-}" ]; then
+  if [ ! -f "$HACHI_NODE_BIN" ] || [ ! -x "$HACHI_NODE_BIN" ]; then
+    echo "hachi: HACHI_NODE_BIN が実行可能ではありません: $HACHI_NODE_BIN" >&2
+    exit 127
+  fi
+  NODE_BIN="$HACHI_NODE_BIN"
+fi
+
+if [ -n "${HOME:-}" ]; then
+  for candidate in "$HOME/.vite-plus/bin/node" "$HOME/.n/bin/node" "$HOME/.volta/bin/node"; do
+    if [ -n "$NODE_BIN" ]; then
+      break
+    fi
+    if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+      NODE_BIN="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  NODE_BIN="$(command -v node 2>/dev/null || true)"
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  echo "hachi: Node.js が見つかりません（Node.js >=22.13 のtoolchainを確認してください）" >&2
+  exit 127
+fi
+
+if ! "$NODE_BIN" -e '
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1);
+' >/dev/null 2>&1; then
+  echo "hachi: Node.js >=22.13 が必要です" >&2
+  exit 127
+fi
+
+CLI_RUNTIME="$HK/packages/cli/node_modules/tsx/dist/cli.mjs"
+CLI_MAIN="$HK/packages/cli/src/main.ts"
+
+if [ ! -f "$CLI_RUNTIME" ]; then
+  echo "hachi: CLI runtime が見つかりません（依存関係を事前にinstallしてください）: packages/cli/node_modules/tsx/dist/cli.mjs" >&2
+  exit 127
+fi
+
+if [ ! -f "$CLI_MAIN" ]; then
+  echo "hachi: CLI entrypoint が見つかりません: packages/cli/src/main.ts" >&2
+  exit 127
+fi
+
+exec "$NODE_BIN" "$CLI_RUNTIME" "$CLI_MAIN" "$@"

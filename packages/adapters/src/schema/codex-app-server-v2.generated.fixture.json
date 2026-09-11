@@ -1,0 +1,7 @@
+{
+  "runtimeVersion": "0.144.1",
+  "schemaVersion": "v2",
+  "source": "codex app-server generate-json-schema --experimental",
+  "file": "codex_app_server_protocol.v2.schemas.json",
+  "sha256": "092f12a1107c1a156ca85cafca77fb553d9c9846e53a2a744e2f2aef88544f51"
+}

@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+# watcher wrapper を凍結してから子孫ごと停止し、必要なら checkpoint lock の解放も確認する。
+
+import argparse
+import hashlib
+import os
+import re
+import signal
+import sqlite3
+import stat
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+from urllib.parse import quote
+
+
+TERM_GRACE_SECONDS = 1.0
+KILL_CONFIRM_SECONDS = 1.0
+POLL_SECONDS = 0.05
+CLAUDE_SESSION_PATTERN = re.compile(r"claude\s+--session-id(?:=|\s)")
+CURSOR_FILE_PATTERN = re.compile(r"(?:^|\s)--cursor-file(?:=|\s+)([^\s]+)")
+HOME_PATTERN = re.compile(r"(?:^|\s)HACHI_KANBAN_HOME=([^\s]+)")
+SAFE_CURSOR_COMPONENT = re.compile(r"^[a-z0-9._-]+$")
+
+
+@dataclass(frozen=True)
+class ProcessInfo:
+    pid: int
+    ppid: int
+    args: str
+
+
+class StopError(RuntimeError):
+    pass
+
+
+def parse_processes(output: str) -> dict[int, ProcessInfo]:
+    processes: dict[int, ProcessInfo] = {}
+    for line in output.splitlines():
+        match = re.match(r"^\s*(\d+)\s+(\d+)\s+(.*)$", line)
+        if match is None:
+            continue
+        process = ProcessInfo(
+            pid=int(match.group(1)),
+            ppid=int(match.group(2)),
+            args=match.group(3),
+        )
+        processes[process.pid] = process
+    return processes
+
+
+def run_ps(args: list[str], allow_missing: bool = False) -> str:
+    result = subprocess.run(
+        ["ps", *args],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 and not (allow_missing and result.returncode == 1):
+        detail = result.stderr.strip() or f"exit {result.returncode}"
+        raise StopError(f"ps の実行に失敗しました: {detail}")
+    return result.stdout
+
+
+def process_snapshot() -> dict[int, ProcessInfo]:
+    return parse_processes(run_ps(["-eww", "-o", "pid=,ppid=,args="]))
+
+
+def inspect_pid(pid: int) -> ProcessInfo | None:
+    output = run_ps(
+        ["-p", str(pid), "-ww", "-o", "pid=,ppid=,args="],
+        allow_missing=True,
+    )
+    return parse_processes(output).get(pid)
+
+
+def is_zombie(pid: int) -> bool:
+    output = run_ps(
+        ["-p", str(pid), "-ww", "-o", "stat="],
+        allow_missing=True,
+    )
+    return output.strip().startswith("Z")
+
+
+def ancestor_pids(processes: dict[int, ProcessInfo], pid: int) -> set[int]:
+    ancestors: set[int] = set()
+    current = processes.get(pid)
+    while current is not None and current.ppid > 0 and current.ppid not in ancestors:
+        ancestors.add(current.ppid)
+        current = processes.get(current.ppid)
+    return ancestors
+
+
+def matches_target(args: str, target_paths: list[str]) -> bool:
+    for path in target_paths:
+        if re.search(rf"(?:^|\s){re.escape(path)}(?:$|\s)", args):
+            return True
+        basename = os.path.basename(path)
+        if re.search(rf"(?:^|[\s/]){re.escape(basename)}(?:$|\s)", args):
+            return True
+    return False
+
+
+def collect_descendants(
+    processes: dict[int, ProcessInfo],
+    root_pids: Iterable[int],
+) -> dict[int, ProcessInfo]:
+    descendants: dict[int, ProcessInfo] = {}
+    frontier = set(root_pids)
+    while frontier:
+        next_frontier: set[int] = set()
+        for process in processes.values():
+            if process.ppid in frontier and process.pid not in descendants:
+                descendants[process.pid] = process
+                next_frontier.add(process.pid)
+        frontier = next_frontier
+    return descendants
+
+
+def signal_name(sig: signal.Signals) -> str:
+    return sig.name.removeprefix("SIG")
+
+
+def send_signal(process: ProcessInfo, sig: signal.Signals, errors: list[str]) -> str:
+    current = inspect_pid(process.pid)
+    if current is None:
+        return "gone"
+    if is_zombie(process.pid):
+        return "gone"
+    if current.args != process.args:
+        errors.append(
+            f"PID {process.pid} の argv が変化したため {signal_name(sig)} を送りません: "
+            f"before={process.args!r} now={current.args!r}"
+        )
+        return "unobservable"
+    if CLAUDE_SESSION_PATTERN.search(current.args):
+        errors.append(
+            f"PID {process.pid} は claude --session-id を含むため signal を送りません: {current.args}"
+        )
+        return "unobservable"
+    try:
+        os.kill(process.pid, sig)
+    except ProcessLookupError:
+        return "gone"
+    except PermissionError as error:
+        errors.append(
+            f"PID {process.pid} へ {signal_name(sig)} を送れません: {error}"
+        )
+        return "unobservable"
+    except OSError as error:
+        errors.append(
+            f"PID {process.pid} への {signal_name(sig)} が失敗しました: {error}"
+        )
+        return "fatal"
+    return "sent"
+
+
+def still_present(processes: dict[int, ProcessInfo]) -> dict[int, ProcessInfo]:
+    snapshot = process_snapshot()
+    return {pid: snapshot[pid] for pid in processes if pid in snapshot}
+
+
+def wait_for_absence(
+    processes: dict[int, ProcessInfo],
+    timeout: float,
+) -> dict[int, ProcessInfo]:
+    deadline = time.monotonic() + timeout
+    remaining = still_present(processes)
+    while remaining and time.monotonic() < deadline:
+        time.sleep(POLL_SECONDS)
+        remaining = still_present(processes)
+    return remaining
+
+
+def process_depth(process: ProcessInfo, all_processes: dict[int, ProcessInfo]) -> int:
+    depth = 0
+    seen = {process.pid}
+    current = process
+    while current.ppid in all_processes and current.ppid not in seen:
+        depth += 1
+        seen.add(current.ppid)
+        current = all_processes[current.ppid]
+    return depth
+
+
+def freeze_descendants(
+    wrappers: dict[int, ProcessInfo],
+    initial_snapshot: dict[int, ProcessInfo],
+    errors: list[str],
+) -> dict[int, ProcessInfo]:
+    descendants = collect_descendants(initial_snapshot, wrappers)
+    frozen: set[int] = set()
+
+    # 子も凍結しながら再列挙し、wrapper の停止直前に増えた枝を取り込む。
+    for _ in range(5):
+        snapshot = process_snapshot()
+        roots = set(wrappers) | set(descendants)
+        descendants.update(collect_descendants(snapshot, roots))
+        pending = [process for pid, process in descendants.items() if pid not in frozen]
+        for process in pending:
+            if send_signal(process, signal.SIGSTOP, errors) == "sent":
+                frozen.add(process.pid)
+        after = process_snapshot()
+        discovered = collect_descendants(after, set(wrappers) | set(descendants))
+        new_pids = set(discovered) - set(descendants)
+        descendants.update(discovered)
+        if not new_pids:
+            return descendants
+
+    errors.append("子孫 process tree が安定せず、5回の列挙で凍結できませんでした")
+    return descendants
+
+
+def terminate_descendants(
+    descendants: dict[int, ProcessInfo],
+    errors: list[str],
+) -> None:
+    ordered = sorted(
+        descendants.values(),
+        key=lambda process: process_depth(process, descendants),
+        reverse=True,
+    )
+    sent_term = False
+    for process in ordered:
+        if send_signal(process, signal.SIGTERM, errors) == "sent":
+            sent_term = True
+        # SIGSTOP 中の process に TERM handler を実行させる。
+        send_signal(process, signal.SIGCONT, errors)
+    if sent_term:
+        time.sleep(TERM_GRACE_SECONDS)
+
+    remaining = still_present(descendants)
+    for pid in sorted(remaining):
+        original = descendants[pid]
+        send_signal(original, signal.SIGKILL, errors)
+
+
+def terminate_wrappers(
+    wrappers: dict[int, ProcessInfo],
+    errors: list[str],
+) -> None:
+    sent_term = False
+    for pid in sorted(wrappers):
+        process = wrappers[pid]
+        if send_signal(process, signal.SIGTERM, errors) == "sent":
+            sent_term = True
+        send_signal(process, signal.SIGCONT, errors)
+    if sent_term:
+        time.sleep(TERM_GRACE_SECONDS)
+
+    remaining = still_present(wrappers)
+    for pid in sorted(remaining):
+        send_signal(wrappers[pid], signal.SIGKILL, errors)
+
+
+def cursor_file_from_args(args: str) -> str | None:
+    matches = CURSOR_FILE_PATTERN.findall(args)
+    if not matches:
+        return None
+    if len(set(matches)) != 1:
+        raise StopError(f"--cursor-file を一意に特定できません: {args}")
+    return matches[0].strip("'\"")
+
+
+def checkpoint_path(args: str, cursor_file: str) -> Path:
+    home_match = HOME_PATTERN.search(args)
+    configured_home = (
+        home_match.group(1).strip("'\"")
+        if home_match is not None
+        else os.environ.get("HACHI_KANBAN_HOME", "~/.hachi-kanban")
+    )
+    home = Path(os.path.expanduser(configured_home))
+    if not home.is_absolute():
+        raise StopError("HACHI_KANBAN_HOME は絶対 path である必要があります")
+
+    cursor = Path(cursor_file)
+    components = cursor.parts
+    if cursor.is_absolute() or not components:
+        raise StopError("--cursor-file は task-await directory からの相対 path である必要があります")
+    if any(
+        component in {"", ".", ".."} or SAFE_CURSOR_COMPONENT.fullmatch(component) is None
+        for component in components
+    ):
+        raise StopError(f"不正な --cursor-file です: {cursor_file}")
+    if components[0] == ".locks":
+        raise StopError(".locks は task-await store の予約領域です")
+
+    task_await = (home.resolve(strict=True) / "state" / "task-await").resolve(strict=True)
+    parent = (task_await / Path(*components[:-1])).resolve(strict=True)
+    try:
+        parent.relative_to(task_await)
+    except ValueError as error:
+        raise StopError("--cursor-file が task-await directory 配下に収まりません") from error
+    return parent / components[-1]
+
+
+def verify_sidecar_lock(args: str, cursor_file: str) -> str:
+    canonical_checkpoint = checkpoint_path(args, cursor_file)
+    home_match = HOME_PATTERN.search(args)
+    configured_home = (
+        home_match.group(1).strip("'\"")
+        if home_match is not None
+        else os.environ.get("HACHI_KANBAN_HOME", "~/.hachi-kanban")
+    )
+    task_await = (
+        Path(os.path.expanduser(configured_home)).resolve(strict=True) / "state" / "task-await"
+    ).resolve(strict=True)
+    locks_directory = (task_await / ".locks").resolve(strict=True)
+    try:
+        locks_directory.relative_to(task_await)
+    except ValueError as error:
+        raise StopError("task-await .locks directory が task-await 配下に収まりません") from error
+
+    digest = hashlib.sha256(os.fspath(canonical_checkpoint).encode("utf-8")).hexdigest()
+    sidecar = locks_directory / f"{digest}.sqlite"
+    link_stat = sidecar.lstat()
+    if (
+        stat.S_ISLNK(link_stat.st_mode)
+        or not stat.S_ISREG(link_stat.st_mode)
+        or link_stat.st_nlink != 1
+        or link_stat.st_uid != os.getuid()
+        or stat.S_IMODE(link_stat.st_mode) != 0o600
+    ):
+        raise StopError(f"sidecar lock が安全な通常 file ではありません: {sidecar}")
+
+    uri = f"file:{quote(os.fspath(sidecar), safe='/')}?mode=rw"
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(uri, uri=True, timeout=0, isolation_level=None)
+        connection.execute("PRAGMA busy_timeout = 0")
+        connection.execute("BEGIN EXCLUSIVE")
+        connection.execute("ROLLBACK")
+    except sqlite3.Error as error:
+        raise StopError(f"sidecar lock を取得できません: {sidecar}: {error}") from error
+    finally:
+        if connection is not None:
+            connection.close()
+    return os.fspath(sidecar)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="watcher wrapper を子孫ごと安全に停止する",
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("watcher", nargs="+")
+    args = parser.parse_args()
+    for path in args.watcher:
+        if not os.path.isabs(path):
+            parser.error(f"watcher wrapper は絶対 path で指定してください: {path}")
+    return args
+
+
+def main() -> int:
+    args = parse_args()
+    target_paths = list(dict.fromkeys(args.watcher))
+    initial = process_snapshot()
+    protected = ancestor_pids(initial, os.getpid()) | {os.getpid()}
+    matched = {
+        pid: process
+        for pid, process in initial.items()
+        if pid not in protected and matches_target(process.args, target_paths)
+    }
+    excluded = {
+        pid: process
+        for pid, process in matched.items()
+        if CLAUDE_SESSION_PATTERN.search(process.args)
+    }
+    wrappers = {pid: process for pid, process in matched.items() if pid not in excluded}
+
+    for pid in sorted(excluded):
+        print(f"excluded claude pid={pid} ppid={excluded[pid].ppid} argv={excluded[pid].args}")
+    for pid in sorted(wrappers):
+        print(f"wrapper pid={pid} ppid={wrappers[pid].ppid} argv={wrappers[pid].args}")
+
+    if not wrappers:
+        print("停止対象の watcher wrapper が見つかりません", file=sys.stderr)
+        return 1
+
+    descendants = collect_descendants(initial, wrappers)
+    if args.dry_run:
+        for pid in sorted(descendants):
+            process = descendants[pid]
+            print(f"descendant pid={pid} ppid={process.ppid} argv={process.args}")
+        print("dry-run: signal と sidecar lock 取得は行っていません")
+        return 0
+
+    errors: list[str] = []
+    for pid in sorted(wrappers):
+        send_signal(wrappers[pid], signal.SIGSTOP, errors)
+
+    descendants = freeze_descendants(wrappers, initial, errors)
+    terminate_descendants(descendants, errors)
+    terminate_wrappers(wrappers, errors)
+
+    known = {**descendants, **wrappers}
+    remaining = wait_for_absence(known, KILL_CONFIRM_SECONDS)
+    for pid in sorted(remaining):
+        process = remaining[pid]
+        errors.append(f"PID {pid} が停止後も残っています: {process.args}")
+
+    fresh = process_snapshot()
+    protected = ancestor_pids(fresh, os.getpid()) | {os.getpid()}
+    respawned = {
+        pid: process
+        for pid, process in fresh.items()
+        if pid not in protected
+        and matches_target(process.args, target_paths)
+        and not CLAUDE_SESSION_PATTERN.search(process.args)
+    }
+    for pid in sorted(respawned):
+        errors.append(f"watcher wrapper が停止確認後も見つかりました: PID {pid}: {respawned[pid].args}")
+
+    cursor_files: dict[tuple[str, str], str] = {}
+    for process in known.values():
+        try:
+            cursor_file = cursor_file_from_args(process.args)
+        except StopError as error:
+            errors.append(str(error))
+            continue
+        if cursor_file is not None:
+            cursor_files[(process.args, cursor_file)] = cursor_file
+
+    if not errors:
+        for process_args, cursor_file in cursor_files:
+            try:
+                sidecar = verify_sidecar_lock(process_args, cursor_file)
+                print(f"sidecar lock acquired path={sidecar}")
+            except (OSError, StopError) as error:
+                errors.append(str(error))
+
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return 1
+
+    for pid in sorted(known):
+        print(f"stopped pid={pid} argv={known[pid].args}")
+    print("watcher wrapper と全子孫の消滅を確認しました")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, StopError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        sys.exit(1)

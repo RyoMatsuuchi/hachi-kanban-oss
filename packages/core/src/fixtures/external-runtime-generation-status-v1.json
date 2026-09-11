@@ -1,0 +1,75 @@
+{
+  "schema": "external-runtime-generation-cross-repo-fixture/v1",
+  "schemaHash": "sha256:8b401504c7412dd865f97240995c4c38b59b7dbd8e813b88ccebf0f2c2f15208",
+  "provider": "codex",
+  "lane": "even-shared",
+  "runtimeKey": "external-shared-runtime/codex/even-shared",
+  "endpoint": "http://127.0.0.1:3456/",
+  "writerPid": 40001,
+  "writerProcessStart": "darwin-ps-lstart:Tue Nov 14 22:13:00 2023",
+  "bootNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "models": [
+    "gpt-5.6-sol",
+    "gpt-5.6-luna"
+  ],
+  "generations": [
+    {
+      "name": "old",
+      "generationId": "11111111111111111111111111111111",
+      "runtimePid": 41001,
+      "runtimeProcessStart": "darwin-ps-lstart:Tue Nov 14 22:13:10 2023",
+      "startedAt": 1700000000000
+    },
+    {
+      "name": "middle",
+      "generationId": "22222222222222222222222222222222",
+      "runtimePid": 41002,
+      "runtimeProcessStart": "darwin-ps-lstart:Tue Nov 14 22:13:20 2023",
+      "startedAt": 1700000003500
+    },
+    {
+      "name": "new",
+      "generationId": "33333333333333333333333333333333",
+      "runtimePid": 41003,
+      "runtimeProcessStart": "darwin-ps-lstart:Tue Nov 14 22:13:30 2023",
+      "startedAt": 1700000005500
+    }
+  ],
+  "timeline": [
+    { "revision": 1, "operation": "running", "generation": "old", "modelIndex": 0, "observedAt": 1700000001000 },
+    { "revision": 2, "operation": "running", "generation": "old", "modelIndex": 1, "observedAt": 1700000002000 },
+    { "revision": 3, "operation": "stopped", "generation": "old", "observedAt": 1700000003000 },
+    { "revision": 4, "operation": "running", "generation": "middle", "modelIndex": 0, "observedAt": 1700000004000 },
+    { "revision": 5, "operation": "running", "generation": "middle", "modelIndex": 1, "observedAt": 1700000005000 },
+    { "revision": 6, "operation": "replaced", "generation": "middle", "replacementGeneration": "new", "replacementModelIndex": 0, "observedAt": 1700000006000 },
+    { "revision": 7, "operation": "running", "generation": "new", "modelIndex": 0, "observedAt": 1700000007000 },
+    { "revision": 8, "operation": "running", "generation": "new", "modelIndex": 1, "observedAt": 1700000008000 },
+    { "revision": 9, "operation": "unknown", "generation": "new", "observedAt": 1700000009000 }
+  ],
+  "expected": {
+    "states": ["running", "stopped", "replaced", "unknown"],
+    "terminalBatchRevisions": {
+      "stopped": 3,
+      "replaced": 6,
+      "unknown": 9
+    },
+    "terminalBatchSize": 2,
+    "finalRevision": 9,
+    "finalState": "unknown",
+    "canonicalSha256": "sha256:2c6738adf74a5357b473b23bf8e57fc19ade7a9863730664c73e4efb0abcf711"
+  },
+  "equivalentRawVariants": [
+    "object-key-order",
+    "whitespace",
+    "safe-integer-exponent",
+    "unicode-escape"
+  ],
+  "invalidVariants": [
+    "duplicate-key",
+    "unknown-key",
+    "attestation-array-order",
+    "transition-array-order"
+  ],
+  "sameRevisionSemanticDifference": "equivocation",
+  "smallerRevision": "replay"
+}

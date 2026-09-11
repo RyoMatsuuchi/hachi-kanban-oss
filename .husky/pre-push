@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# pre-push: フルテスト実行
+# HUSKY=0 で skip 可能（緊急時の逃げ道。常用しない）
+[ "$HUSKY" = "0" ] && exit 0
+set -e
+
+# Git hooks inherit repository-local GIT_* variables.  The test suite creates
+# isolated repositories and worktrees, so carrying those variables into pnpm
+# would redirect fixture Git commands back to the repository being pushed.
+# Git itself is the source of truth for the complete local variable list.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
+
+# repo 正本の test script（root package.json の "test"）に揃える。
+# 直接 recursive 実行すると package 間が並列になり、実プロセス・実ファイルシステムを
+# 起こすテストが相互干渉して落ちる。さらに node --test scripts/*.test.mjs の 31 件を
+# 実行しないため、scripts/ 配下の変更が push 時に一度も検証されなかった。
+# ユーザー決定 2026-09-01（t_05157112565efd6b）。
+pnpm test

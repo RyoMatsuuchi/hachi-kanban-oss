@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hachi Codexイベント待機"
+  short_description: "CLIの状態変化をLunaで待ち、親タスクへ通知する手順と検証範囲"
+  default_prompt: "$hachi-codex-event-wait を使い、担当看板のイベント待機と親への通知経路を設定してください。既存の通知タスクを再利用し、未検証の経路は未検証と明記してください。"
